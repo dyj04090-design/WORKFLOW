@@ -1,0 +1,755 @@
+<!doctype html>
+<!--
+================================================================================
+WORDFLOW — COMPLETE AI HANDOFF / MAINTENANCE SPEC
+Spec version: 2026-09-27.1
+App version carrying this spec: v64
+
+PURPOSE
+This single HTML file is both the application and the canonical maintenance handoff.
+A future GPT / Claude / coding agent should read THIS BLOCK, WORDFLOW_RULES, and
+WORDFLOW_PATCH_NOTES before editing. Do not delete or silently shorten them.
+
+A. FIRST 90 SECONDS — WHAT THIS APP IS
+A.1 Wordflow is a single-file browser vocabulary/review app. No build step is required.
+A.2 Durable browser keys:
+    - localStorage app state: wordflow_v1
+    - localStorage Supabase config: wordflow_supabase_config_v1
+A.3 Cloud source of truth is Supabase table public.wordflow_state, one row per auth user:
+      user_id uuid primary key
+      payload jsonb  <-- WHOLE Wordflow state object
+      updated_at timestamptz
+      revision bigint  <-- server-managed compare-and-swap version
+A.4 External runtime dependencies:
+    - @supabase/supabase-js@2 via jsDelivr
+    - ts-fsrs@5.4.1/+esm via jsDelivr
+A.5 The browser client may contain ONLY a publishable/anon key. Never embed service_role,
+    secret keys, database passwords, or other privileged credentials in this HTML.
+
+B. SOURCE-OF-TRUTH / EDITING WORKFLOW
+B.1 If the user supplies the current HTML and asks for a patch, edit it and return the
+    FINISHED next-version HTML directly. Do NOT make the user run a separate upgrader,
+    patcher, converter, or manual merge unless the user explicitly asks for one.
+B.2 Before changing code, identify whether the request is:
+    DATA change    = vocabulary/sentence/image/content only -> normally NO app bump.
+    CODE change    = UI/schema/behavior/sync/scheduler code -> bump APP_VERSION.
+B.3 For a code version bump, update ALL THREE together:
+    (1) APP_VERSION, (2) this header/version history, (3) WORDFLOW_PATCH_NOTES.
+    Visible version labels must come from APP_VERSION; do not hard-code a second UI version.
+B.4 Preserve unknown JSON fields. Never rebuild an existing card/sentence by selecting
+    only fields the current code knows. Modify the existing object in place / Object.assign.
+B.5 Server-authoritative sync: browsers SELECT the latest state and submit only changed JSON
+    paths to wordflow_patch_v59 with expected_revision. Never restore whole-payload browser writes.
+    Direct browser INSERT/UPDATE/DELETE privileges are revoked. Unknown fields are preserved.
+
+C. STATE SHAPE — PRESERVE THESE ARRAYS/OBJECTS
+Top-level payload commonly contains:
+  cards[]            vocabulary cards
+  reviews[]          vocabulary review log
+  sentences[]        Korean->English sentence cards
+  sentenceReviews[]  sentence review log
+  learningItems[]    image-first browsing cards; NO FSRS
+  decks[]            vocabulary deck names (currently unified to English by default)
+  streak{}           lastDate/count
+  migrations{}       one-time migration flags
+  scheduler{}        FSRS metadata/config record
+  syncMeta{}         dirty/lastSyncedAt/userId
+Unknown future top-level fields must survive load/save/sync.
+
+D. VOCABULARY CARD CONTENT RULES
+D.1 Add vocabulary/sentences ONLY when explicitly requested. A question/explanation alone
+    never authorizes a DB write.
+D.2 Default headword = natural dictionary/base form (lemma), unless user explicitly asks
+    for a particular inflection/plural such as claws, veins, arteries.
+D.3 Add IPA by default for ordinary words/short expressions.
+D.4 Meaning = concise Korean teaching meaning for the actual target sense(s).
+D.5 Default examples = 5 natural English examples. A useful user/source sentence should
+    be first when reasonable. English examples use REAL blank lines (\n\n). Korean
+    translations align one-per-example using REAL newlines. Never store visible "\\n".
+D.6 Notes are teacher notes: 품사, 한국어 체감/핵심 뉘앙스, register, patterns/collocations,
+    caution, and high-value related/contrasting forms. Explain native usage, not just gloss.
+D.7 Duplicate check is case-insensitive. Enrich an existing card rather than duplicate it
+    unless user explicitly wants a separate card.
+D.8 Existing study state is user data. On edits preserve id, due, fsrs, reps, interval,
+    lapses, createdAt, review history, and ALL unknown/new fields.
+D.9 Current default vocabulary deck is "English".
+D.10 After direct DB writes touching notes/examples, verify literal backslash-n count = 0.
+D.11 EVERYDAY NATIVE USAGE — MANDATORY (2026-09-27 user instruction): When adding
+    examples, write 5 sentences that closely reflect how native speakers commonly use
+    the target word/expression in real everyday life. Prioritize frequent situations,
+    natural collocations, and conversational wording people would actually say.
+    Use natural contractions, questions, or replies where appropriate; vary practical
+    contexts without forcing rare senses. Avoid stiff textbook wording, contrived
+    scenarios, and sentences that merely demonstrate grammar. Respect the target's
+    actual register: for formal/specialist words use realistic contexts in that register,
+    without implying they are common casual slang. Keep the aligned Korean translations
+    equally natural. This governs future additions; do not rewrite existing cards unless
+    requested. 한국어 핵심: 원어민이 실생활에서 흔히 쓰는 상황·말투·단어 조합을 최대한 살린 예문 5개.
+
+
+E. SENTENCE RULES
+E.1 Review direction is Korean -> English. Multiple accepted English answers are allowed.
+E.2 **double asterisks** mark the intended highlighted span; rendered highlight is RED.
+E.3 Vocabulary red highlighting was intentionally reverted in v32. Do not re-add it unless
+    explicitly requested. Sentence highlights stay red.
+E.4 Editing sentence text/notes must preserve existing scheduling state/history.
+
+F. WORD IMAGE RULES — HIGH PRIORITY
+F.1 Choose the image a native English speaker is most likely to picture first for THIS
+    CARD'S TAUGHT SENSE. This outranks source prestige or prettiness.
+F.2 IMAGE SOURCE RULE — MANDATORY: vocabulary images must come from an external web/image URL.
+    NEVER generate or self-create a vocabulary image. Search the web and store the chosen URL.
+F.3 DEFAULT IMAGE COUNT = 1. Add exactly ONE teaching image unless there is a strong reason
+    not to.
+F.4 POLYSEMY EXCEPTION = 2 by default when the taught meanings are highly distinct and a single
+    image would be misleading. Example: calf = 종아리 / 송아지. In such cases, add TWO clear,
+    highly intuitive images, normally one per distinct sense, unless the user explicitly wants a
+    different count. Use 3 images only when the user explicitly asks for 3, or when three
+    clearly separate taught senses genuinely need coverage.
+F.5 Do not fill cards with generic metaphorical stock images just to increase coverage.
+F.6 Legacy primary-image fields (still supported for compatibility):
+      imageUrl, imageSource, imageSourceUrl, imageSense
+    imageSource/imageSourceUrl may remain in old data but are no longer shown in the UI.
+F.7 v45+ canonical multi-image field (optional):
+      images: [
+        { url, source, sourceUrl, sense },
+        ...
+      ]
+    UI renders at most 3 unique valid http/https images. The legacy imageUrl is treated as
+    primary/fallback and is deduplicated against images[]. Duplicate URLs merge metadata so a
+    sense caption from images[] is not lost when the same URL is also imageUrl.
+F.8 v47 DISPLAY RULE: do NOT show image source/source URL in Wordflow UI. Under each image,
+    show only a short Korean scene-intent caption explaining what situation the image is meant
+    to depict. Store that caption in images[].sense (or imageSense for a legacy-only primary).
+F.9 v51+ EDITOR RULE: the vocabulary editor exposes three editable image slots. Slot 1 is the
+    representative/legacy primary; slots 2-3 are optional. Saving mirrors slot 1 to imageUrl /
+    imageSense and stores all non-empty unique slots in images[]. Existing card-level unknown
+    fields and FSRS state must still be preserved.
+F.10 v57 REVIEW IMAGE VISIBILITY — MANDATORY: vocabulary review images stay completely hidden
+     before answer reveal. Reveal the image gallery only together with the answer. Scene-intent
+     captions also remain hidden before reveal and become visible after reveal.
+F.11 Use external image URLs for routine vocabulary images; avoid Base64 in cards.
+F.12 IMAGE DATA NEVER BUMPS APP VERSION. Adding, replacing, removing, or recaptioning vocabulary
+     images is a Supabase DATA change only. Do not create a new HTML version for image work.
+F.13 Do NOT use one-time HTML migrations for routine image additions/replacements. Perform the
+     narrow Supabase DB write directly and verify it by re-querying the target card.
+F.14 For polysemous adjective cards like provocative, adding per-image sense captions is
+     encouraged when it reduces confusion about why an image was chosen.
+F.15 Prefer immediately recognizable real-world photos over sketches/diagrams when the goal is
+     fast vocabulary recognition; e.g., calf(종아리) should use an obvious actual calf photo,
+     not an abstract sketch, unless a diagram is specifically requested.
+F.16 ANATOMY / BODY-PART RULE — MANDATORY: for anatomy or body-part words, prefer a real photo
+     where the target body part is immediately identifiable in context. If useful, prefer images
+     with a circle, arrow, highlight, or other visual marker pointing to the exact target part.
+
+G. REVIEW / FSRS — DO NOT CASUALLY REWRITE
+G.1 Scheduler: ts-fsrs@5.4.1 / FSRS 6.
+    retention .90, maximum interval 36500d, fuzz ON, short-term ON,
+    learning steps 1m/10m, relearning 10m.
+G.2 Scheduler config changes must NOT retroactively recompute existing due dates.
+G.3 v24 initial-review race fix is intentional: review startup waits for both FSRS and
+    initial cloud sync so an arriving cloud payload cannot invalidate the live review queue.
+G.4 Vocabulary shortcuts: Num0 or Space reveal; Num1-4 ratings; Num+ pronunciation.
+G.5 Next-review columns are hidden by default.
+
+H. TTS / PRONUNCIATION — v28 STABLE BASELINE
+H.1 One utterance at a time. While speaking/pending or inside post-speech lock, ignore extras.
+H.2 Do not casually add speechSynthesis.cancel(), retry queues, or rapid replay logic.
+H.3 ~500ms post-speech lock is intentional. Num+ key repeat is ignored.
+
+I. [학습] TAB
+I.1 Visual browsing/learning only: NO FSRS, due, reps, quiz, or ratings.
+I.2 Categories: 동작 / 신체 / 맛 / 색깔. Use label "신체", not "부위".
+I.3 Image comes first. Body anatomy may be taught with one accurate multi-label diagram.
+I.4 learningItems may store compressed WebP data URLs; this is separate from routine
+    vocabulary-card imagery, which should normally use URLs.
+
+J. SUPABASE / SYNC INVARIANTS
+J.1 public.wordflow_state payload is the whole app state. RLS limits each authenticated user
+    to their own row. Client uses auth.uid() ownership policies.
+J.2 `save()` submits a path-level patch only after server load/login. Offline mutations are blocked.
+J.3 `applyCloudPayload()` must preserve an active review session by rebinding queue items by id.
+J.4 Initial load always uses server data. A conflict refuses the stale patch and reloads the server;
+    keep attempted edits in recovery-only local snapshots. Never offer whole-payload overwrite.
+    Server archives previous payloads in private state_history on every update/delete.
+    Privileged direct DB content changes remain narrow and must preserve all other fields.
+J.5 Direct DB writes must be verified by re-querying affected card(s), count, formatting,
+    image metadata, and FSRS fields before claiming success.
+J.6 v54 DB-WRITE COMPLETION GATE — MANDATORY: when the user explicitly asks to add, edit,
+    replace, or delete Wordflow DB data, the task is NOT complete after search/image selection.
+    The agent MUST continue in the same turn through: (1) discover Supabase tool if needed,
+    (2) live-query the target card/state, (3) perform the narrow JSONB write, (4) re-query and
+    verify target fields + due/reps/fsrs, and only then send a final success message.
+J.7 The agent MUST NOT stop with phrases like "DB 반영은 아직 못 했어" merely because a web/image
+    search finished first or because Supabase was not initially surfaced. Before any such failure
+    message, it must attempt Supabase discovery and execution, and may report failure only after
+    Supabase itself errors and reasonable retries fail.
+J.8 Do not substitute container/manual SQL/user re-upload for an available Supabase connector.
+    Explicit Wordflow DB mutation requests are atomic: SEARCH -> READ -> WRITE -> VERIFY -> FINAL.
+J.9 NO RE-CONFIRMATION RULE — MANDATORY: when the user clearly asks to add, replace, edit, or
+    delete Wordflow data, do not ask whether to proceed, do not say what you 'would add', and do
+    not stop with suggestions. Execute the requested DB change immediately, then report only
+    after verification. Ask a question only when a genuinely missing required detail cannot be
+    resolved by live DB read/search.
+
+K. UI / BEHAVIOR TO PRESERVE
+K.1 Responsive PC/mobile behavior.
+K.2 Sync status belongs in sidebar + Data screen; no noisy Home warning banner.
+K.3 Broken images fail gracefully and do not break review layout.
+K.4 v43: cards created within 30 minutes are pinned to top of vocabulary list, newest first.
+K.5 v44: those temporarily pinned cards show a small red dot beside the word.
+K.6 v45: up to 3 related vocabulary images render in review/detail. Desktop = 3-column
+    gallery when multiple images; mobile = horizontal swipe/snap. Single-image cards keep the
+    prior large contained-image presentation.
+K.7 v51: vocabulary edit modal exposes all three image URL + scene-caption slots. Empty slots
+    stay empty; multi-image support does NOT change the default authoring rule of one image,
+    except for clearly split polysemous words where two intuitive images are preferred.
+K.8 v52: clicking the dimmed area outside the vocabulary add/edit modal must NOT close it.
+    Only explicit Cancel or Save closes that modal, preventing accidental loss of edits.
+K.9 v53: the maintenance rule for image authoring is now default 1 image, but default 2 for
+    sharply divergent polysemy (e.g. calf = 종아리 / 송아지).
+K.10 v54: explicit Wordflow DB mutations have a completion gate: do not return success/failure
+    before Supabase discovery/read/write/re-query verification has been attempted in the same turn.
+K.11 v55: temporary maintenance build used an augment image migration; superseded by v56.
+K.12 v56: routine image work is DB-only, externally sourced, never generated; clear DB mutation
+    requests execute without re-confirmation; anatomy/body-part images prioritize real contextual
+    photos and circles/arrows/highlights when useful.
+K.18 v64: Vocabulary list keeps headings/buttons horizontal and consistent with sentences;
+    narrow screens show word, meaning, then controls in compact card rows.
+K.17 v63: Sentence list reserves control-column widths on desktop and uses stacked rows
+    on narrow screens; headings and buttons must never wrap character by character.
+K.16 v62: Data settings expose a read-only Wordflow rules dialog with Korean summary,
+    canonical handoff text, WORDFLOW_RULES and patch notes; keep summary aligned on edits.
+K.15 v61: routine save success/progress must not show a toast. Keep passive sync status and
+     actionable failure/conflict notices; saving remains immediate.
+K.14 v60: server checks/saves must never dim the screen. Unchanged revisions do not rebuild
+     the UI; unchanged active cards preserve their DOM/reveal state on server acknowledgements.
+K.13 v57: vocabulary review images are hidden before answer reveal and appear only after the user
+    reveals the answer; detail-modal images remain visible normally.
+
+L. KNOWN VERSION HISTORY — DO NOT INVENT MISSING HISTORY
+- v19: vocabulary deck consolidation -> English; FSRS state preserved.
+- v21: pronunciation speaker control introduced/improved.
+- v22: TTS stabilization iteration.
+- v23: Num+ pronunciation shortcut/audio behavior.
+- v24: initial review waits for FSRS/cloud init; fixed first-load queue race.
+- v25: TTS no-cutoff experiment.
+- v26: preferred/local English voice experiment.
+- v27: serialized TTS experiment; rapid replay could still cut off.
+- v28: stable TTS playback lock; no cancel/retry queue; ~500ms post-speech lock.
+- v29-v31: not reliably reconstructed; do not fabricate details.
+- v32: reverted vocabulary red highlights; retained sentence red highlights + v28 TTS.
+- v33: added image-first [학습] tab; no FSRS.
+- v34: initial body-learning pack.
+- v35: higher-quality body visuals.
+- v36: vocabulary imageUrl/imageSource/imageSourceUrl + pre-reveal image hints.
+- v37: experimental curated-image packaging; NOT authoritative for synced DB state.
+- v38: initial AI handoff rules.
+- v39: comprehensive handoff/spec.
+- v40: long edit modal scroll fix; Save/Cancel remain visible.
+- v41: visible version labels derive from APP_VERSION.
+- v42: edit image preview shows entire image without cropping.
+- v43: recently-added vocabulary cards pinned for 30 minutes by createdAt.
+- v44: small red dot on those recent cards during the same 30-minute window.
+- v45: canonical images[] rendering, max 3 related images; legacy image fallback/dedupe;
+       desktop gallery + mobile swipe; editor preservation rule documented.
+- v46: targeted provocative-image refresh migration; scheduling data preserved.
+- v47: image sources hidden from UI; scene-intent captions shown after answer reveal in review.
+- v48: desktop vocabulary review auto-compacts by viewport height so image, word, examples,
+       answer, and rating controls fit far more comfortably on one PC screen; mobile unchanged.
+- v49: removed the desktop review heading/subtitle and bounded revealed answers to the viewport.
+- v50: desktop review now expands images/type when measured content leaves spare vertical room,
+       while retaining the compact/scroll-safe fallback for long cards; mobile unchanged.
+- v51: vocabulary editor exposes image slots 1-3 (URL + scene caption), mirrors slot 1 to legacy
+       primary fields, and makes one image the default authoring count unless multiple are explicit.
+- v52: vocabulary add/edit modal no longer closes when the user clicks the backdrop/outside area;
+       Cancel or Save remains the intentional exit path.
+- v53: image authoring rule updated to default 1 image, but default 2 for sharply split polysemy;
+       added a one-time calf image migration replacing the sketch-like calf image with an obvious
+       real calf photo and adding a calf-animal photo for the separate animal meaning.
+- v54: maintenance workflow adds a mandatory DB-write completion gate: explicit data mutations
+       must finish Supabase discovery/read/write/re-query verification in the same turn before final.
+- v55: temporary augment-image migration build; superseded because routine image changes must
+       be direct DB data writes rather than HTML migrations/version bumps.
+- v56: removes the v55 augment migration and hardens handoff rules: externally sourced image URLs
+       only; no generated vocabulary images; image changes never bump HTML; no re-confirmation for
+       clear DB mutations; anatomy/body-part images use identifiable real photos and markers when useful.
+- v57: vocabulary review image galleries are hidden before answer reveal and shown only after reveal;
+       detail views are unchanged.
+
+- v58: synchronize WORDFLOW_RULES with the latest handoff rules; no runtime behavior changes.
+
+- v59: server-first reads, revision-checked path patches, legacy write blocking, private server
+       snapshots, foreground refresh and recovery-only local drafts.
+
+- v60: remove sync-time dimming; skip unchanged server refresh rendering; preserve unchanged
+       active review DOM, reveal state and completed queue position on server acknowledgements.
+       Immediate saves, success notifications and server concurrency protection remain enabled.
+
+- v64: Align vocabulary list columns, horizontal detail buttons, toolbar and mobile cards.
+- v63: Fix sentence list column widths and nowrap buttons; responsive mobile rows.
+- v62: Add Wordflow rules viewer in Data settings with Korean summary and full handoff.
+- v61: silence routine save success/progress toasts; immediate saving, passive sync status,
+       error/conflict notices and v60 steady review rendering remain enabled.
+
+M. BEFORE SAYING "DONE" — REQUIRED CHECKLIST
+- Did the user request an actual write, or only an explanation?
+- If DB write: duplicate checked; target form/IPA/examples/notes correct; real line breaks;
+  re-query verified; FSRS preserved?
+- If image: target sense correct; metadata stored; legacy + images[] compatibility checked?
+- If code: APP_VERSION/header/patch notes aligned; old one-image cards work; a 3-image card
+  works; editor shows/saves slots 1-3; default authoring count remains 1; mobile layout works; JS syntax checked?
+- If image migration: target card exists or safely no-ops; image is intuitive; short caption style preserved?
+- If an HTML patch was requested: return the finished HTML itself, not a patching utility.
+================================================================================
+-->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#0b0d12">
+<title>Wordflow — English Review</title>
+<style>
+:root{--bg:#0a0c10;--panel:#11141b;--panel-2:#171b24;--border:#252b38;--text:#f5f7fb;--muted:#929bad;--accent:#7c9cff;--accent-2:#a980ff;--green:#5fd6a2;--yellow:#f4c66a;--red:#ff7a86;--blue:#71b7ff;--shadow:0 24px 80px rgba(0,0,0,.35);--radius:22px}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(circle at 10% 0%,rgba(124,156,255,.14),transparent 28%),radial-gradient(circle at 100% 10%,rgba(169,128,255,.10),transparent 24%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,textarea,select{font:inherit}button{cursor:pointer}.app{min-height:100vh;display:grid;grid-template-columns:250px 1fr}.sidebar{position:sticky;top:0;height:100vh;padding:24px 18px;border-right:1px solid var(--border);background:rgba(10,12,16,.78);backdrop-filter:blur(20px)}.brand{display:flex;align-items:center;gap:12px;padding:5px 8px 28px}.logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:grid;place-items:center;font-weight:900}.brand h1{font-size:18px;margin:0}.brand span{display:block;color:var(--muted);font-size:11px;margin-top:2px}nav{display:grid;gap:8px}.nav-btn{border:0;background:transparent;color:var(--muted);border-radius:13px;padding:12px 14px;text-align:left}.nav-btn:hover,.nav-btn.active{background:var(--panel-2);color:var(--text)}.side-sync{width:100%;margin-top:14px;border:1px solid var(--border);background:rgba(17,20,27,.72);color:var(--muted);border-radius:13px;padding:10px 12px;display:flex;align-items:center;gap:9px;text-align:left;font-size:11px}.side-sync-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.side-foot{position:absolute;left:18px;right:18px;bottom:20px;color:var(--muted);font-size:12px;line-height:1.5;padding:14px;background:var(--panel);border:1px solid var(--border);border-radius:16px}main{padding:34px;max-width:1240px;width:100%;margin:0 auto}.topbar{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:30px}.title h2{font-size:30px;letter-spacing:-.04em;margin:0 0 6px}.title p{margin:0;color:var(--muted)}.actions{display:flex;gap:10px}.btn{border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:13px;padding:11px 15px;font-weight:700}.btn:hover{border-color:#394154}.btn.primary{border:0;background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff}.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}.card{background:linear-gradient(180deg,rgba(24,28,38,.96),rgba(16,19,26,.96));border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}.view{display:none}.view.active{display:block}.pill{display:inline-flex;padding:7px 10px;border-radius:999px;background:var(--panel-2);color:var(--muted);font-size:12px;justify-content:center}.home-streak,.home-review-card,.list-card{grid-column:span 12;padding:20px}.home-streak{display:flex;align-items:center;justify-content:space-between;gap:24px}.label{color:var(--muted);font-size:12px}.streak-num{font-size:42px;font-weight:900}.home-review-top,.section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.home-review-top h3,.section-head h3{margin:0}.home-review-top p{margin:5px 0 0;color:var(--muted);font-size:12px}.word-home-summary{padding:20px;margin-bottom:12px;border:1px solid var(--border);border-radius:16px;background:rgba(10,13,19,.46)}.word-home-summary h3{font-size:27px;margin:9px 0 8px}.word-home-summary p{color:var(--muted);line-height:1.6;font-size:13px}.progress{height:10px;background:#222735;border-radius:999px;overflow:hidden}.progress>div{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2))}.home-review-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.home-review-stat{padding:15px 16px;background:rgba(10,13,19,.46);border:1px solid var(--border);border-radius:15px}.home-review-stat .value{font-size:25px;font-weight:850;margin-top:5px}.home-review-stat .sub{font-size:10px;color:var(--muted);margin-top:4px}.deck-row{display:grid;grid-template-columns:1fr 120px 110px 110px;gap:12px;align-items:center;padding:14px 4px;border-top:1px solid var(--border)}.deck-name{font-weight:800}.deck-meta{font-size:12px;color:var(--muted);margin-top:4px}.review-shell{max-width:820px;margin:15px auto 0}.review-meta{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-bottom:12px}.flashcard{min-height:420px;padding:42px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}.flashcard .word{font-size:54px;font-weight:900;letter-spacing:-.05em}.word-line{display:flex;align-items:center;gap:8px}.flashcard .word-line{justify-content:center}.pronunciation{font-size:12px;color:var(--muted)}.flashcard .pronunciation{font-size:16px;margin-top:9px}.speaker-btn{display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--muted);padding:5px;border-radius:8px;font-size:18px}.flashcard .speaker-btn{font-size:23px}.context{margin-top:20px;color:var(--muted);font-size:18px;line-height:1.7;max-width:680px;width:100%;display:grid;gap:12px}.example-block{display:grid;gap:5px}.example-target{font-weight:900;color:var(--text)}.example-translation{display:none;color:#9ca6b8;font-size:14px}.context.show-translations .example-translation,.detail-content .example-translation{display:block}.answer{display:none;margin-top:28px;padding-top:28px;border-top:1px solid var(--border);width:100%}.answer.show{display:block}.answer .meaning{font-size:28px;font-weight:850}.answer .note{color:var(--muted);margin-top:12px;line-height:1.6;white-space:pre-line}.review-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}.rate{border:1px solid var(--border);background:var(--panel);padding:14px 10px;border-radius:14px;color:var(--text);font-weight:800}.rate strong,.rate small{display:block}.rate small{font-size:11px;color:var(--muted);font-weight:500;margin-top:5px}.reveal{width:100%;margin-top:14px;padding:15px}.kbd{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:5px;padding:2px 5px}.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.search{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:11px 13px;border-radius:12px;outline:none}.cards-table{overflow:auto}table{width:100%;border-collapse:collapse;min-width:860px}th,td{text-align:left;padding:13px 10px;border-top:1px solid var(--border);font-size:13px}th{color:var(--muted)}.due-col.is-hidden{display:none}.due-controls{display:flex;gap:8px}.row-actions{display:flex;gap:4px}.icon-btn{background:transparent;border:0;color:var(--muted);padding:7px}.detail-btn{border:1px solid var(--border);background:#0e1117;color:#c8d0df;border-radius:9px;padding:7px 10px;font-size:11px}.detail-btn.empty{opacity:.35}.word-wrap{display:flex;flex-direction:column;gap:4px}.word-image-thumb-wrap{display:flex;align-items:center;gap:10px}.word-image-thumb{width:54px;height:54px;border-radius:10px;object-fit:cover;background:#0b0e13;border:1px solid var(--border)}.recent-card-dot{width:8px;height:8px;border-radius:50%;background:#ff4d5f;display:inline-block;box-shadow:0 0 0 3px rgba(255,77,95,.12)}
+/* v45 related-image gallery */
+.word-image-gallery{width:100%;max-width:720px;margin:0 auto 22px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.word-image-gallery.single{grid-template-columns:1fr;max-width:620px}.word-image-tile{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:16px;background:#0c0f15;box-shadow:0 10px 28px rgba(0,0,0,.16)}.word-image-tile.broken{display:none}.word-image-tile img{display:block;width:100%;height:220px;object-fit:contain;background:#0b0e13}.word-image-gallery.single .word-image-tile img{height:auto;max-height:390px}.word-image-caption{display:flex;align-items:center;justify-content:center;padding:9px 11px;border-top:1px solid var(--border);font-size:11px;line-height:1.5;color:#cfd6e6;text-align:center}.review-image-caption{display:none}.review-image-caption.show{display:flex}#review .review-image-gallery{display:none}#review .review-shell.answer-revealed .review-image-gallery{display:grid}.detail-word-image-gallery{margin-bottom:16px}.detail-word-image-gallery .word-image-tile img{height:210px}.detail-word-image-gallery.single .word-image-tile img{height:auto;max-height:360px}
+.modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.68);backdrop-filter:blur(7px);z-index:20;place-items:center;padding:18px;overflow:hidden}.modal-backdrop.show{display:grid}.modal{width:min(620px,100%);padding:24px;max-height:calc(100dvh - 36px);display:flex;flex-direction:column;overflow:hidden}.modal h3{margin:0 0 20px}.form-grid{display:grid;gap:14px;min-height:0;overflow-y:auto;padding-right:5px}.modal>.form-grid{flex:1 1 auto}label{font-size:12px;color:var(--muted);font-weight:700}input,textarea,select{width:100%;margin-top:6px;background:#0e1117;border:1px solid var(--border);color:var(--text);padding:12px 13px;border-radius:12px;outline:none}textarea{min-height:100px;resize:vertical}.modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)}.detail-modal{width:min(760px,100%);padding:24px;max-height:calc(100dvh - 36px);overflow:auto}.detail-word{font-size:13px;color:var(--muted);margin:-10px 0 18px}.detail-content{white-space:pre-wrap;line-height:1.75;background:#0e1117;border:1px solid var(--border);border-radius:14px;padding:16px}.image-editor-block{padding:14px;border:1px solid var(--border);border-radius:14px;background:rgba(10,13,19,.42);display:grid;gap:10px}.image-editor-block+.image-editor-block{margin-top:2px}.image-editor-title{font-size:12px;font-weight:850;color:var(--text);display:flex;align-items:center;justify-content:space-between;gap:10px}.image-editor-title small{color:var(--muted);font-size:10px;font-weight:650}.word-image-preview{display:none;margin-top:2px;border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#0b0e13}.word-image-preview.show{display:block}.word-image-preview img{display:block;width:100%;max-height:300px;height:auto;object-fit:contain}.image-source-grid,.sync-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px}.inline-add{display:flex;gap:8px;align-items:end}.inline-add label{flex:1}.deck-manage-list{display:grid;gap:9px;max-height:370px;overflow:auto;margin-top:14px}.deck-manage-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:12px;background:#0e1117;border:1px solid var(--border);border-radius:13px}.btn.small{padding:8px 10px;font-size:12px}.sync-panel{padding:18px;background:#0e1117;border:1px solid var(--border);border-radius:16px}.sync-status{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}.sync-dot{width:9px;height:9px;border-radius:50%;background:#596274}.sync-dot.ok{background:var(--green)}.sync-dot.busy{background:var(--yellow)}.sync-dot.err{background:var(--red)}.sync-account{margin-left:auto;color:var(--text);font-weight:700}.sync-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.cloud-badge{display:inline-flex;padding:7px 10px;border-radius:999px;background:rgba(124,156,255,.1);font-size:12px;color:#c7d3ff}.setup-note{margin-top:12px;padding:12px;border:1px dashed #3b4355;border-radius:12px;color:var(--muted);font-size:12px;line-height:1.6}.sentence-highlight{color:#ff5f68;font-weight:900}.sentence-prompt{font-size:36px;font-weight:850;line-height:1.45}.sentence-answer-list{display:grid;gap:10px}.sentence-answer-option{font-size:22px;font-weight:780;padding:14px;border:1px solid var(--border);background:#0e1117;border-radius:13px}.sentence-note{color:var(--muted);margin-top:16px;white-space:pre-line}.learn-hero{padding:22px;margin-bottom:16px}.learn-category-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-top:16px}.learn-category{border:1px solid var(--border);background:#0e1117;color:var(--text);border-radius:16px;padding:16px;text-align:left}.learn-category.active{border-color:#46516b;background:#151a24}.learn-category-icon{font-size:24px}.learn-category-name{font-weight:850;margin-top:8px}.learn-category-desc,.learn-category-count{font-size:11px;color:var(--muted);margin-top:4px}.learn-toolbar{display:flex;gap:9px;margin:14px 0 16px}.learn-filter-pill{border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:999px;padding:9px 13px}.learn-filter-pill.active{color:var(--text);background:var(--panel-2)}.learn-gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.learn-card{overflow:hidden;background:#101319;border:1px solid var(--border);border-radius:18px}.learn-card-media{aspect-ratio:4/3;background:#171b24;display:grid;place-items:center;overflow:hidden}.learn-card-media img{width:100%;height:100%;object-fit:cover}.learn-card-placeholder{font-size:54px}.learn-card-body{padding:14px}.learn-card-top{display:flex;justify-content:space-between;gap:8px}.learn-card-title{font-size:22px;font-weight:900}.learn-card-pron,.learn-card-note{font-size:11px;color:var(--muted);margin-top:5px}.learn-card-meaning{font-size:13px;margin-top:9px}.learn-mini-btn{border:0;background:transparent;color:var(--muted);padding:5px}.learn-mini-btn.favorite.on{color:#ffd369}.learn-detail-image{width:100%;max-height:54vh;object-fit:contain;border-radius:15px}.learn-detail-title strong{font-size:27px}.learn-detail-meaning{margin-top:10px}.learn-detail-note{white-space:pre-line;color:var(--muted);margin-top:12px}.learn-preview{display:none;margin-top:10px}.learn-preview.show{display:block}.learn-preview img{display:block;width:100%;max-height:260px;object-fit:contain}.toast{position:fixed;right:22px;bottom:22px;background:#171c25;border:1px solid var(--border);padding:12px 15px;border-radius:12px;display:none;z-index:40}.toast.show{display:block}.empty{text-align:center;padding:50px 20px;color:var(--muted)}.mobile-nav{display:none}.review-exit-row{display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px}
+@media(min-width:901px){
+/* v49 desktop review viewport fit.
+   The review heading/subtitle are removed; only a slim exit row remains.
+   The card is viewport-bounded, and long revealed answers scroll inside the card instead of spilling below the browser. */
+#review.view.active{height:calc(100vh - 68px);min-height:0;display:flex;flex-direction:column;overflow:hidden}
+#review .review-exit-row{height:44px;min-height:44px;display:flex;justify-content:flex-end;align-items:flex-start;margin-bottom:2px}
+#review .review-exit-row .btn{padding:9px 14px}
+#review .review-shell{margin:0 auto;max-width:820px;width:100%;flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+#review .review-meta{flex:0 0 auto;margin-bottom:clamp(4px,.6vh,8px);font-size:12px}
+#review .flashcard{min-height:0;max-height:none;flex:1 1 auto;padding:clamp(14px,1.8vh,22px);overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+#review .word-image-gallery{margin-bottom:clamp(8px,1vh,13px);gap:8px}
+#review .word-image-tile img{height:clamp(120px,15.5vh,165px)}
+#review .word-image-gallery.single .word-image-tile img{height:auto;max-height:clamp(185px,24vh,250px)}
+#review .word-image-caption{padding:6px 8px;font-size:10px;line-height:1.3}
+#review .flashcard .word{font-size:clamp(36px,4.2vh,45px)}
+#review .flashcard .speaker-btn{font-size:19px}
+#review .flashcard .pronunciation{font-size:13px;margin-top:4px}
+#review .context{margin-top:clamp(8px,1vh,12px);font-size:clamp(13px,1.42vh,15px);line-height:1.42;gap:clamp(4px,.55vh,7px)}
+#review .example-block{gap:2px}
+#review .example-translation{font-size:12.5px}
+#review .answer{margin-top:clamp(9px,1.1vh,14px);padding-top:clamp(9px,1.1vh,14px)}
+#review .answer .meaning{font-size:clamp(20px,2.35vh,25px);line-height:1.25}
+#review .answer .note{margin-top:7px;line-height:1.38;font-size:12.5px}
+#review .reveal{flex:0 0 auto;margin-top:8px;padding:10px}
+#review .review-actions{flex:0 0 auto;margin-top:8px;gap:8px}
+#review .rate{padding:9px 7px}
+#review .rate small{margin-top:2px}
+/* After reveal, reclaim extra space before resorting to the card's internal scrollbar. */
+#review .review-shell.answer-revealed .word-image-gallery{margin-bottom:6px}
+#review .review-shell.answer-revealed .word-image-tile img{height:clamp(90px,11.5vh,125px)}
+#review .review-shell.answer-revealed .word-image-gallery.single .word-image-tile img{max-height:clamp(135px,17.5vh,185px)}
+#review .review-shell.answer-revealed .flashcard .word{font-size:clamp(32px,3.6vh,40px)}
+#review .review-shell.answer-revealed .flashcard .pronunciation{margin-top:2px}
+#review .review-shell.answer-revealed .context{margin-top:6px;font-size:clamp(12px,1.28vh,14px);line-height:1.34;gap:3px}
+#review .review-shell.answer-revealed .example-translation{font-size:12px}
+#review .review-shell.answer-revealed .answer{margin-top:7px;padding-top:7px}
+#review .review-shell.answer-revealed .answer .meaning{font-size:clamp(19px,2.15vh,23px)}
+#review .review-shell.answer-revealed .answer .note{margin-top:5px;font-size:12px;line-height:1.3}
+}
+@media(min-width:901px) and (max-height:820px){
+#review.view.active{height:calc(100vh - 48px)}
+#review .review-exit-row{height:38px;min-height:38px}
+#review .review-exit-row .btn{padding:7px 12px;font-size:12px}
+#review .flashcard{padding:10px 16px}
+#review .word-image-gallery{margin-bottom:6px}
+#review .word-image-tile img{height:105px}
+#review .word-image-gallery.single .word-image-tile img{max-height:175px}
+#review .flashcard .word{font-size:34px}
+#review .flashcard .pronunciation{font-size:12px;margin-top:2px}
+#review .context{margin-top:5px;font-size:12.5px;line-height:1.3;gap:3px}
+#review .answer{margin-top:6px;padding-top:6px}
+#review .answer .meaning{font-size:19px}
+#review .answer .note{font-size:11.5px;line-height:1.26;margin-top:4px}
+#review .reveal,#review .review-actions{margin-top:6px}
+#review .rate{padding:7px 5px;font-size:11.5px}
+#review .review-shell.answer-revealed .word-image-tile img{height:78px}
+#review .review-shell.answer-revealed .word-image-gallery.single .word-image-tile img{max-height:120px}
+#review .review-shell.answer-revealed .flashcard .word{font-size:30px}
+#review .review-shell.answer-revealed .context{font-size:11.5px;line-height:1.24;gap:2px}
+#review .review-shell.answer-revealed .answer .meaning{font-size:18px}
+#review .review-shell.answer-revealed .answer .note{font-size:11px;line-height:1.22}
+}
+/* v50: when the measured review content leaves spare room on a normal/tall desktop,
+   expand visual hierarchy instead of leaving a large empty lower half.
+   These classes are assigned dynamically; v49 compact sizing remains the fallback. */
+@media(min-width:901px) and (min-height:821px){
+#review .review-shell.fit-roomy{max-width:900px}
+#review .review-shell.fit-spacious{max-width:960px}
+#review .review-shell.fit-roomy .flashcard{padding:clamp(18px,2.15vh,27px)}
+#review .review-shell.fit-spacious .flashcard{padding:clamp(20px,2.45vh,31px)}
+#review .review-shell.fit-roomy .word-image-gallery{max-width:770px;margin-bottom:clamp(10px,1.35vh,16px);gap:9px}
+#review .review-shell.fit-spacious .word-image-gallery{max-width:820px;margin-bottom:clamp(12px,1.6vh,19px);gap:10px}
+#review .review-shell.fit-roomy .word-image-tile img{height:clamp(155px,17.5vh,190px)}
+#review .review-shell.fit-spacious .word-image-tile img{height:clamp(175px,20vh,220px)}
+#review .review-shell.fit-roomy .word-image-gallery.single .word-image-tile img{height:auto;max-height:clamp(245px,29vh,310px)}
+#review .review-shell.fit-spacious .word-image-gallery.single .word-image-tile img{height:auto;max-height:clamp(280px,33vh,350px)}
+#review .review-shell.fit-roomy .word-image-caption{padding:7px 9px;font-size:10.5px;line-height:1.35}
+#review .review-shell.fit-spacious .word-image-caption{padding:8px 10px;font-size:11px;line-height:1.4}
+#review .review-shell.fit-roomy .flashcard .word{font-size:clamp(42px,4.7vh,49px)}
+#review .review-shell.fit-spacious .flashcard .word{font-size:clamp(46px,5.2vh,55px)}
+#review .review-shell.fit-roomy .flashcard .speaker-btn{font-size:21px}
+#review .review-shell.fit-spacious .flashcard .speaker-btn{font-size:23px}
+#review .review-shell.fit-roomy .flashcard .pronunciation{font-size:13.5px;margin-top:5px}
+#review .review-shell.fit-spacious .flashcard .pronunciation{font-size:14px;margin-top:6px}
+#review .review-shell.fit-roomy .context{margin-top:clamp(9px,1.2vh,14px);font-size:clamp(14px,1.5vh,16px);line-height:1.46;gap:clamp(4px,.65vh,8px)}
+#review .review-shell.fit-spacious .context{margin-top:clamp(10px,1.4vh,16px);font-size:clamp(15px,1.65vh,17px);line-height:1.5;gap:clamp(5px,.75vh,9px)}
+#review .review-shell.fit-roomy .example-translation{font-size:13px}
+#review .review-shell.fit-spacious .example-translation{font-size:13.5px}
+#review .review-shell.fit-roomy .answer{margin-top:clamp(10px,1.3vh,15px);padding-top:clamp(10px,1.3vh,15px)}
+#review .review-shell.fit-spacious .answer{margin-top:clamp(12px,1.5vh,18px);padding-top:clamp(12px,1.5vh,18px)}
+#review .review-shell.fit-roomy .answer .meaning{font-size:clamp(23px,2.55vh,27px);line-height:1.28}
+#review .review-shell.fit-spacious .answer .meaning{font-size:clamp(25px,2.85vh,30px);line-height:1.3}
+#review .review-shell.fit-roomy .answer .note{margin-top:8px;font-size:13px;line-height:1.4}
+#review .review-shell.fit-spacious .answer .note{margin-top:9px;font-size:13.5px;line-height:1.44}
+/* revealed cards are allowed to stay large when the measurement says there is room */
+#review .review-shell.answer-revealed.fit-roomy .word-image-gallery{margin-bottom:9px}
+#review .review-shell.answer-revealed.fit-spacious .word-image-gallery{margin-bottom:11px}
+#review .review-shell.answer-revealed.fit-roomy .word-image-tile img{height:clamp(145px,16vh,180px)}
+#review .review-shell.answer-revealed.fit-spacious .word-image-tile img{height:clamp(165px,18.5vh,205px)}
+#review .review-shell.answer-revealed.fit-roomy .word-image-gallery.single .word-image-tile img{max-height:clamp(220px,26vh,285px)}
+#review .review-shell.answer-revealed.fit-spacious .word-image-gallery.single .word-image-tile img{max-height:clamp(255px,30vh,325px)}
+#review .review-shell.answer-revealed.fit-roomy .flashcard .word{font-size:clamp(40px,4.45vh,47px)}
+#review .review-shell.answer-revealed.fit-spacious .flashcard .word{font-size:clamp(44px,4.9vh,52px)}
+#review .review-shell.answer-revealed.fit-roomy .context{margin-top:8px;font-size:clamp(13.5px,1.43vh,15.5px);line-height:1.4;gap:4px}
+#review .review-shell.answer-revealed.fit-spacious .context{margin-top:9px;font-size:clamp(14.5px,1.55vh,16.5px);line-height:1.44;gap:5px}
+#review .review-shell.answer-revealed.fit-roomy .example-translation{font-size:12.8px}
+#review .review-shell.answer-revealed.fit-spacious .example-translation{font-size:13.2px}
+#review .review-shell.answer-revealed.fit-roomy .answer{margin-top:9px;padding-top:9px}
+#review .review-shell.answer-revealed.fit-spacious .answer{margin-top:11px;padding-top:11px}
+#review .review-shell.answer-revealed.fit-roomy .answer .meaning{font-size:clamp(22px,2.45vh,26px)}
+#review .review-shell.answer-revealed.fit-spacious .answer .meaning{font-size:clamp(24px,2.7vh,29px)}
+#review .review-shell.answer-revealed.fit-roomy .answer .note{margin-top:7px;font-size:12.8px;line-height:1.36}
+#review .review-shell.answer-revealed.fit-spacious .answer .note{margin-top:8px;font-size:13.3px;line-height:1.4}
+}
+@media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}main{padding:22px 16px 92px}.mobile-nav{display:grid;grid-template-columns:repeat(6,1fr);position:fixed;left:10px;right:10px;bottom:10px;background:rgba(17,20,27,.94);border:1px solid var(--border);border-radius:17px;z-index:10;padding:7px}.mobile-nav button{background:transparent;border:0;color:var(--muted);padding:9px 3px}.mobile-nav button.active{background:var(--panel-2);color:var(--text)}.home-review-stats{grid-template-columns:repeat(2,1fr)}.learn-gallery{grid-template-columns:repeat(2,1fr)}.learn-category-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:700px){main{padding:18px 12px 94px}.topbar{flex-direction:column;align-items:stretch}.toolbar,.learn-toolbar{display:grid;grid-template-columns:1fr}.cards-table{overflow:visible}.cards-table table{display:block;min-width:0}.cards-table thead{display:none}.cards-table tbody{display:grid;gap:10px}.cards-table tr{display:grid;padding:13px 14px;background:#0e1117;border:1px solid var(--border);border-radius:15px}.cards-table td{display:grid;grid-template-columns:82px 1fr;gap:10px;padding:8px 0;border:0;border-top:1px solid var(--border)}.cards-table td:first-child{border-top:0}.flashcard{min-height:360px;padding:26px 16px}.flashcard .word{font-size:38px}.context{font-size:15px}.review-actions{grid-template-columns:1fr 1fr}.modal-backdrop{padding:8px;align-items:end}.modal,.detail-modal{width:100%;max-height:calc(100dvh - 16px);padding:18px}.sync-grid,.image-source-grid{grid-template-columns:1fr}.word-image-gallery:not(.single){grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:minmax(78%,1fr);overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:5px}.word-image-gallery:not(.single) .word-image-tile{scroll-snap-align:center}.word-image-gallery:not(.single) .word-image-tile img{height:250px}.word-image-gallery.single .word-image-tile img{max-height:310px}.detail-word-image-gallery:not(.single){grid-auto-columns:minmax(86%,1fr)}.learn-gallery{grid-template-columns:1fr 1fr}.learn-card-title{font-size:18px}.toast{left:12px;right:12px;bottom:86px;text-align:center}}
+@media(max-width:480px){.home-review-stats{grid-template-columns:1fr 1fr}.learn-gallery{grid-template-columns:1fr 1fr}.learn-category-grid{grid-template-columns:1fr 1fr}.title h2{font-size:25px}}
+
+body.server-saving .view:not(#settings){pointer-events:none}
+
+#wordflowRulesDialog{width:min(800px,calc(100% - 24px));max-height:88dvh;padding:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow)}
+#wordflowRulesDialog::backdrop{background:rgba(0,0,0,.65)}
+.rules-header{position:sticky;top:0;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 22px;background:var(--panel);border-bottom:1px solid var(--border);z-index:1}
+.rules-header h2{margin:0;font-size:21px}.rules-content{padding:8px 22px 24px;line-height:1.8}.rules-content h3{margin:22px 0 8px;font-size:16px;color:var(--accent)}.rules-content ul{padding-left:22px;margin:8px 0}.rules-content details{border-top:1px solid var(--border);padding:14px 0}.rules-content summary{cursor:pointer;font-weight:700}.rules-content pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.7 ui-monospace,monospace;color:var(--muted)}
+
+/* v63: long sentences must not squeeze the action columns. */
+#sentences .cards-table{min-width:0;overflow-x:auto}
+#sentences table{width:100%;table-layout:fixed}
+#sentences th{white-space:nowrap;word-break:keep-all;text-align:center}
+#sentences th:first-child{text-align:left}
+#sentences th:nth-child(2){width:136px}
+#sentences th:nth-child(3){width:112px}
+#sentences th:nth-child(4){width:100px}
+#sentences th:nth-child(5){width:88px}
+#sentences th:nth-child(6){width:92px}
+#sentences td{vertical-align:middle;padding:18px 10px;text-align:center}
+#sentences td.sentence-list-text{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.8;word-break:normal}
+#sentences .detail-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:9px 12px;white-space:nowrap;word-break:keep-all;border-radius:11px;font-size:13px;font-weight:600;line-height:1.3}
+#sentences .sentence-answer-btn{color:var(--accent);background:rgba(124,156,255,.09);border-color:rgba(124,156,255,.25)}
+#sentences .sentence-answer-count{font-size:11px;padding:2px 6px;border-radius:6px;background:rgba(124,156,255,.14)}
+#sentences .sentence-no-note{font-size:12px;color:var(--muted);white-space:nowrap}
+#sentences .sentence-reps{white-space:nowrap;font-variant-numeric:tabular-nums}
+#sentences .sentence-reps-unit{margin-left:3px;color:var(--muted);font-size:12px}
+#sentences .sentence-edit-actions{display:flex;gap:4px;justify-content:center}
+#sentences .sentence-edit-actions .icon-btn{flex:none;width:32px;height:34px;padding:0}
+@media(max-width:1100px){
+#sentences table,#sentences tbody{display:block}
+#sentences thead{display:none}
+#sentences tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:20px 0;border-bottom:1px solid var(--border)}
+#sentences tbody tr:last-child{border-bottom:0}
+#sentences td{display:block;padding:0;border:0;width:auto}
+#sentences td.sentence-list-text{flex:0 0 100%;padding-bottom:5px}
+#sentences .sentence-reps{color:var(--muted);font-size:12px}
+#sentences .sentence-reps:before{content:'복습 ';}
+#sentences td.due-col:not(.is-hidden){font-size:12px;color:var(--muted)}
+#sentences td.due-col:not(.is-hidden):before{content:'다음 복습 ';}
+#sentences td.is-hidden{display:none}
+#sentences .sentence-edit-cell{margin-left:auto}
+#sentences td[colspan]{width:100%}
+}
+
+/* v64 vocabulary list: stable columns and compact controls */
+#cards .list-card,#cards .cards-table{min-width:0}
+#cards .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+#cards .toolbar .search{flex:1 1 280px;min-width:0;width:auto}
+#cards #deckFilter{flex:0 1 150px;width:150px;min-width:100px}
+#cards .toolbar .btn,#cards .due-controls{white-space:nowrap;flex-shrink:0}
+#cards table{width:100%;table-layout:fixed}
+#cards th{white-space:nowrap;word-break:keep-all;text-align:center}
+#cards th:first-child{width:25%;text-align:left}
+#cards th:nth-child(2){text-align:left}
+#cards th:nth-child(3),#cards th:nth-child(4){width:104px}
+#cards th:nth-child(5){width:84px}
+#cards th:nth-child(6){width:94px}
+#cards th:nth-child(7){width:88px}
+#cards th:nth-child(8){width:84px}
+#cards td{padding:16px 10px;vertical-align:middle;text-align:center}
+#cards td.vocab-word-cell,#cards td.vocab-meaning-cell{text-align:left;overflow-wrap:anywhere;line-height:1.65}
+#cards .word-image-thumb{flex:none;width:48px;height:48px;object-fit:cover;border-radius:10px}
+#cards .word-wrap{min-width:0}
+#cards .word-line{flex-wrap:wrap;gap:7px}
+#cards .word-line strong{overflow-wrap:anywhere}
+#cards .speaker-btn,#cards .recent-card-dot{flex:none}
+#cards .pronunciation{overflow-wrap:anywhere;line-height:1.5}
+#cards .detail-btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:9px 12px;white-space:nowrap;word-break:keep-all;border-radius:11px;font-size:13px;font-weight:600;line-height:1.3}
+#cards .vocab-example-cell .detail-btn{color:var(--accent);background:rgba(124,156,255,.09);border-color:rgba(124,156,255,.25)}
+#cards .vocab-deck{display:inline-block;max-width:100%;overflow-wrap:anywhere;background:var(--panel-2);border-radius:7px;padding:4px 7px;font-size:11px;color:var(--muted)}
+#cards .vocab-reps{white-space:nowrap;font-variant-numeric:tabular-nums}
+#cards .vocab-reps-unit{margin-left:3px;color:var(--muted);font-size:12px}
+#cards .vocab-empty{color:var(--muted);font-size:12px}
+#cards .row-actions{justify-content:center;gap:4px}
+#cards .row-actions .icon-btn{flex:none;width:30px;height:34px;padding:0}
+@media(max-width:1100px){
+#cards .cards-table{overflow:visible}
+#cards table,#cards tbody{display:block;min-width:0}
+#cards thead{display:none}
+#cards tbody tr{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:18px 14px;margin-bottom:10px;background:#0e1117;border:1px solid var(--border);border-radius:15px}
+#cards td{display:block;width:auto;padding:0;border:0}
+#cards td.vocab-word-cell,#cards td.vocab-meaning-cell{flex:0 0 100%}
+#cards td.vocab-meaning-cell{padding-bottom:6px;color:var(--text)}
+#cards td.vocab-actions-cell{margin-left:auto}
+#cards .vocab-reps{font-size:12px;color:var(--muted)}
+#cards .vocab-reps:before{content:'복습 ';}
+#cards td.due-col:not(.is-hidden){font-size:12px;color:var(--muted)}
+#cards td.due-col:not(.is-hidden):before{content:'다음 복습 ';}
+#cards td.is-hidden{display:none}
+#cards td[colspan]{width:100%}
+}
+@media(max-width:600px){
+#cards .toolbar .search{flex-basis:100%;width:100%}
+#cards #deckFilter{flex:1 1 120px;width:auto}
+#cards .toolbar .btn{padding:10px 12px;font-size:12px}
+#cards .due-controls{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+<div class="app"><aside class="sidebar"><div class="brand"><div class="logo">W</div><div><h1>Wordflow</h1><span>English, without the ugly UI.</span></div></div><nav><button class="nav-btn active" data-view="home">⌂ &nbsp;홈</button><button class="nav-btn" data-view="review">↻ &nbsp;복습</button><button class="nav-btn" data-view="cards">▤ &nbsp;단어장</button><button class="nav-btn" data-view="learn">◫ &nbsp;학습</button><button class="nav-btn" data-view="sentences">✎ &nbsp;문장</button><button class="nav-btn" data-view="settings">⚙ &nbsp;데이터</button></nav><button class="side-sync" data-view="settings"><span class="sync-dot err" id="sideSyncDot"></span><span class="side-sync-text" id="sideSyncText">동기화 상태 확인 중…</span></button><div class="side-foot">카드는 이 브라우저에 자동 저장됩니다.<br>JSON 백업도 지원해요.</div></aside>
+<main>
+<section id="home" class="view active"><div class="topbar"><div class="title"><h2>Wordflow <span data-app-version></span></h2><p>버전 생성일 · <span id="buildDateLabel"></span> · AI handoff rules</p></div></div><div class="grid"><div class="card home-streak"><div><div class="label">현재 연속 학습</div><p style="color:var(--muted);font-size:12px">완벽하게 많이 하는 것보다, 매일 몇 장이라도 보는 걸 우선해요.</p></div><div><span class="streak-num" id="streakNum">0</span> <small>days streak</small></div></div>
+<div class="card home-review-card"><div class="home-review-top"><div><h3>단어 복습</h3><p>영어 단어를 보고 뜻을 먼저 떠올리는 복습 현황이에요.</p></div><button class="btn primary" onclick="startReview()">단어 복습 시작 →</button></div><div class="word-home-summary"><div class="pill" id="schedulerBadge">FSRS · 불러오는 중</div><h3 id="heroTitle">오늘 복습할 단어가 준비됐어요.</h3><p id="heroDesc"></p><div class="progress"><div id="dayProgress" style="width:0%"></div></div></div><div class="home-review-stats"><div class="home-review-stat"><div class="label">지금 복습 남음</div><div class="value" id="dueCount">0</div><div class="sub">현재 복습 가능한 단어</div></div><div class="home-review-stat"><div class="label">오늘 완료</div><div class="value" id="wordDoneHomeCount">0</div></div><div class="home-review-stat"><div class="label">전체 단어</div><div class="value" id="totalCount">0</div></div><div class="home-review-stat"><div class="label">학습 시작</div><div class="value" id="learnedCount">0</div></div></div></div>
+<div class="card home-review-card"><div class="home-review-top"><div><h3>문장 복습</h3><p>한국어를 보고 영어 문장을 직접 떠올리는 연습이에요.</p></div><button class="btn primary" onclick="startSentenceReview()">문장 복습 시작 →</button></div><div class="home-review-stats"><div class="home-review-stat"><div class="label">지금 복습 남음</div><div class="value" id="sentenceDueHomeCount">0</div></div><div class="home-review-stat"><div class="label">오늘 완료</div><div class="value" id="sentenceDoneHomeCount">0</div></div><div class="home-review-stat"><div class="label">전체 문장</div><div class="value" id="sentenceTotalHomeCount">0</div></div><div class="home-review-stat"><div class="label">학습 시작</div><div class="value" id="sentenceLearnedHomeCount">0</div></div></div></div><div class="card list-card"><div class="section-head"><h3>내 단어장</h3><button class="btn" onclick="switchView('cards')">전체 보기</button></div><div id="deckSummary"></div></div></div></section>
+<section id="review" class="view"><div class="review-exit-row"><button class="btn" onclick="switchView('home')">끝내기</button></div><div class="review-shell" id="reviewShell"></div></section>
+<section id="cards" class="view"><div class="topbar"><div class="title"><h2>단어장</h2><p>내가 실제로 만난 문맥과 함께 저장하세요.</p></div><button class="btn primary" onclick="openModal()">+ 단어 추가</button></div><div class="card list-card"><div class="toolbar"><input id="searchInput" class="search" placeholder="단어, 뜻, 발음, 예문, 메모 검색..." oninput="renderCards()"><select id="deckFilter" onchange="renderCards()"><option value="all">모든 덱</option></select><div class="due-controls"><button class="btn" id="cardDueToggle" onclick="toggleCardDue()">다음 복습 보기</button><select id="cardDueSort" style="display:none" onchange="setCardDueSort(this.value)"><option value="asc">다음 복습 빠른 순</option><option value="desc">다음 복습 늦은 순</option></select></div><button class="btn" onclick="openDeckManager()">덱 관리</button></div><div class="cards-table"><table><thead><tr><th>단어</th><th>뜻</th><th>예문</th><th>메모</th><th>덱</th><th class="due-col is-hidden">다음 복습</th><th>복습 횟수</th><th>관리</th></tr></thead><tbody id="cardsBody"></tbody></table></div></div></section>
+<section id="learn" class="view"><div class="topbar"><div class="title"><h2>학습</h2><p>퀴즈 없이 이미지로 훑어보며 표현을 감각적으로 익혀요.</p></div><button class="btn primary" onclick="openLearningModal()">+ 학습 카드</button></div><div class="card learn-hero"><h3>이미지로 보면 바로 이해되는 표현들</h3><p style="color:var(--muted)">동작·신체·맛·색깔처럼 글만으로는 애매한 표현을 모아두는 자유 열람 공간입니다. FSRS에는 영향을 주지 않습니다.</p><div class="learn-category-grid" id="learningCategoryGrid"></div></div><div class="learn-toolbar"><input id="learningSearchInput" class="search" placeholder="표현, 뜻, 메모 검색..." oninput="renderLearning()"><button class="learn-filter-pill active" id="learnAllBtn" onclick="setLearningCategory('all')">전체</button><button class="learn-filter-pill" id="learnFavBtn" onclick="toggleLearningFavorites()">★ 즐겨찾기</button></div><div class="learn-gallery" id="learningGallery"></div></section>
+<section id="sentences" class="view"><div class="topbar"><div class="title"><h2>문장</h2><p>한국어를 보고 자연스러운 영어 문장을 직접 떠올리는 연습이에요.</p></div><div class="actions"><button class="btn" onclick="openSentenceModal()">+ 문장 추가</button><button class="btn primary" onclick="startSentenceReview()">문장 복습</button></div></div><div class="card list-card"><div class="toolbar"><input id="sentenceSearchInput" class="search" placeholder="한국어 문장, 영어 정답, 메모 검색..." oninput="renderSentences()"><div class="due-controls"><button class="btn" id="sentenceDueToggle" onclick="toggleSentenceDue()">다음 복습 보기</button><select id="sentenceDueSort" style="display:none" onchange="setSentenceDueSort(this.value)"><option value="asc">다음 복습 빠른 순</option><option value="desc">다음 복습 늦은 순</option></select></div><button class="btn primary" onclick="openSentenceModal()">+ 문장 추가</button></div><div class="cards-table"><table><thead><tr><th>한국어 문장</th><th>영어 정답</th><th>메모</th><th class="due-col is-hidden">다음 복습</th><th>복습 횟수</th><th>관리</th></tr></thead><tbody id="sentencesBody"></tbody></table></div></div></section>
+<section id="sentenceReview" class="view"><div class="topbar"><div class="title"><h2>문장 복습</h2><p>한국어 문장을 영어로 먼저 말한 뒤 정답을 확인하세요.</p></div><button class="btn" onclick="switchView('sentences')">끝내기</button></div><div class="review-shell" id="sentenceReviewShell"></div></section>
+<section id="settings" class="view"><div class="topbar"><div class="title"><h2>데이터 · 동기화</h2><p>PC와 휴대폰에서 같은 단어장과 문장장을 사용하세요.</p></div></div><div class="grid"><div class="card list-card"><div class="section-head"><h3>☁ 클라우드 동기화</h3><span class="cloud-badge">Supabase Sync</span></div><div class="sync-status" style="margin-bottom:16px"><span class="sync-dot" id="syncDot"></span><span id="syncStatusText">클라우드 연결 전</span><span class="sync-account" id="syncAccount"></span></div><div class="sync-grid"><div class="sync-panel"><h4>① 클라우드 연결</h4><p>Supabase Project URL과 publishable/anon key를 사용합니다.</p><label>Project URL<input id="sbUrl" placeholder="https://xxxxx.supabase.co"></label><label>Publishable / anon key<input id="sbKey" placeholder="sb_publishable_... 또는 anon key"></label><div class="sync-actions"><button class="btn primary" onclick="saveCloudConfig()">연결 정보 저장</button></div></div><div class="sync-panel"><h4>② Wordflow 로그인</h4><label>이메일<input id="authEmail" type="email"></label><label>비밀번호<input id="authPassword" type="password"></label><div class="sync-actions"><button class="btn primary" onclick="cloudSignIn()">로그인</button><button class="btn" onclick="cloudSignUp()">회원가입</button><button class="btn" id="logoutBtn" onclick="cloudSignOut()" style="display:none">로그아웃</button><button class="btn" id="syncNowBtn" onclick="syncNow()" style="display:none">지금 동기화</button></div></div></div><div class="setup-note"><strong>서버 기준 동기화:</strong> 변경한 항목만 저장하며 다른 기기의 최신 데이터를 덮어쓰지 않습니다.<p id="serverSyncMessage">로그인 후 서버의 최신 단어장을 불러옵니다.</p><button class="btn" onclick="syncNow()">서버 새로고침</button> <button class="btn" onclick="exportRecovery()">복구용 사본 내보내기</button></div></div><div class="card list-card"><div class="section-head"><h3>🧠 복습 알고리즘</h3><span class="cloud-badge">FSRS 6</span></div><p style="color:var(--muted);line-height:1.7">목표 기억률 90%, 학습 1분 → 10분, 재학습 10분. 기존 due는 설정 변경만으로 재계산하지 않습니다.</p></div><div class="card list-card"><div class="section-head"><h3>로컬 백업 · 복원</h3><button class="btn" id="wordflowRulesButton" onclick="openWordflowRules()">Wordflow 규칙</button></div><div class="toolbar"><button class="btn primary" onclick="exportData()">JSON 내보내기</button><button class="btn" onclick="document.getElementById('importFile').click()">JSON에서 없는 카드 추가</button><input id="importFile" type="file" accept=".json" hidden onchange="importData(event)"></div></div></div></section>
+</main></div>
+<div class="mobile-nav"><button class="active" data-view="home">홈</button><button data-view="review">복습</button><button data-view="cards">단어장</button><button data-view="learn">학습</button><button data-view="sentences">문장</button><button data-view="settings">데이터</button></div>
+<div class="modal-backdrop" id="modalBackdrop"><div class="card modal"><h3 id="cardModalTitle">새 단어 추가</h3><div class="form-grid"><label>영어 단어 / 표현<input id="fWord"></label><label>발음기호<input id="fPronunciation"></label><label>한국어 뜻<input id="fMeaning"></label><label>문맥 / 예문<textarea id="fContext"></textarea></label><label>예문 한국어 해석<textarea id="fContextKo"></textarea></label><label>메모<textarea id="fNote"></textarea></label><div class="hint">이미지는 기본 1장만 사용합니다. 2·3번은 여러 장을 쓰고 싶을 때만 입력하세요.</div><div class="image-editor-block"><div class="image-editor-title">이미지 1 <small>대표 이미지 · 기본</small></div><label>이미지 1 URL<input id="fImageUrl1" oninput="updateWordImagePreview(1)"></label><label>이미지 1 장면 설명<input id="fImageSense1" placeholder="예: 휴대폰에 몰두해 주변 상황을 전혀 눈치채지 못하는 장면"></label><div class="word-image-preview" id="wordImagePreview1"><img id="wordImagePreviewImg1" alt="단어 이미지 1 미리보기" onerror="this.parentElement.classList.remove('show')"></div></div><div class="image-editor-block"><div class="image-editor-title">이미지 2 <small>선택</small></div><label>이미지 2 URL<input id="fImageUrl2" oninput="updateWordImagePreview(2)"></label><label>이미지 2 장면 설명<input id="fImageSense2" placeholder="두 번째 이미지를 쓰는 이유 / 장면"></label><div class="word-image-preview" id="wordImagePreview2"><img id="wordImagePreviewImg2" alt="단어 이미지 2 미리보기" onerror="this.parentElement.classList.remove('show')"></div></div><div class="image-editor-block"><div class="image-editor-title">이미지 3 <small>선택</small></div><label>이미지 3 URL<input id="fImageUrl3" oninput="updateWordImagePreview(3)"></label><label>이미지 3 장면 설명<input id="fImageSense3" placeholder="세 번째 이미지를 쓰는 이유 / 장면"></label><div class="word-image-preview" id="wordImagePreview3"><img id="wordImagePreviewImg3" alt="단어 이미지 3 미리보기" onerror="this.parentElement.classList.remove('show')"></div></div><div class="hint">저장 시 이미지 1은 기존 imageUrl/imageSense에도 자동 반영되고, 비어 있지 않은 이미지 슬롯은 images[]에 함께 저장됩니다.</div><label>덱<select id="fDeck"></select></label></div><div class="modal-actions"><button class="btn" onclick="closeModal()">취소</button><button class="btn primary" id="cardSaveBtn" onclick="saveCard()">저장</button></div></div></div>
+<div class="modal-backdrop" id="sentenceModalBackdrop"><div class="card modal"><h3 id="sentenceModalTitle">새 문장 추가</h3><div class="form-grid"><label>한국어 문장<textarea id="sKorean"></textarea></label><label>영어 정답 (한 줄에 하나)<textarea id="sAnswers"></textarea></label><label>메모<textarea id="sNote"></textarea></label></div><div class="modal-actions"><button class="btn" onclick="closeSentenceModal()">취소</button><button class="btn primary" id="sentenceSaveBtn" onclick="saveSentence()">저장</button></div></div></div>
+<div class="modal-backdrop" id="deckModalBackdrop"><div class="card modal"><h3>덱 관리</h3><div class="inline-add"><label>새 덱 이름<input id="newDeckName" onkeydown="if(event.key==='Enter'){event.preventDefault();addDeck()}"></label><button class="btn primary" onclick="addDeck()">추가</button></div><div class="deck-manage-list" id="deckManageList"></div><div class="modal-actions"><button class="btn" onclick="closeDeckManager()">닫기</button></div></div></div>
+<div class="modal-backdrop" id="detailModalBackdrop"><div class="card detail-modal"><h3 id="detailModalTitle">상세 보기</h3><div class="detail-word" id="detailModalWord"></div><div class="detail-content" id="detailModalContent"></div><div class="modal-actions"><button class="btn primary" onclick="closeDetailModal()">닫기</button></div></div></div>
+<div class="modal-backdrop" id="learningModalBackdrop"><div class="card modal"><h3 id="learningModalTitle">새 학습 카드</h3><div class="form-grid"><label>카테고리<select id="lCategory"></select></label><label>영어 단어 / 표현<input id="lTerm"></label><label>발음기호<input id="lPronunciation"></label><label>한국어 뜻<input id="lMeaning"></label><label>짧은 설명<textarea id="lNote"></textarea></label><label>대표 이미지<input id="lImageFile" type="file" accept="image/*" onchange="handleLearningImageFile(event)"></label><button class="btn" type="button" onclick="clearLearningImage()">이미지 제거</button><div class="learn-preview" id="learningImagePreview"><img id="learningPreviewImg"></div></div><div class="modal-actions"><button class="btn" onclick="closeLearningModal()">취소</button><button class="btn primary" id="learningSaveBtn" onclick="saveLearningItem()">저장</button></div></div></div>
+<div class="modal-backdrop" id="learningDetailBackdrop"><div class="card detail-modal"><div id="learningDetailContent"></div><div class="modal-actions"><button class="btn primary" onclick="closeLearningDetail()">닫기</button></div></div></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const STORAGE_KEY='wordflow_v1', CLOUD_CONFIG_KEY='wordflow_supabase_config_v1', FSRS_PACKAGE_URL='https://cdn.jsdelivr.net/npm/ts-fsrs@5.4.1/+esm';
+const FSRS_CONFIG=Object.freeze({request_retention:.90,maximum_interval:36500,enable_fuzz:true,enable_short_term:true,learning_steps:['1m','10m'],relearning_steps:['10m']});
+const APP_VERSION='v64',APP_BUILD_DATE='2026-09-27';
+const WORDFLOW_RULES=Object.freeze({rulesVersion:'2026-09-27.1',architecture:{singleFileHtml:true,storageKey:STORAGE_KEY,cloudConfigKey:CLOUD_CONFIG_KEY,cloudTable:'public.wordflow_state',wholePayloadSync:false,serverAuthoritative:true,syncDimsScreen:false,saveSuccessToast:false,saveProgressToast:false,saveFailureAndConflictNotices:true,unchangedRevisionSkipsRender:true,unchangedReviewCardPreservesDom:true,patchRpc:"wordflow_patch_v59",optimisticConcurrency:true,legacyClientWritesBlocked:true},explicitAddOnly:true,versionPolicy:'data/content changes normally do not bump app; code/UI/schema/behavior changes do',preserveUnknownJsonFields:true,vocabulary:{defaultForm:'lemma unless explicit inflection requested',ipa:'default for normal words/short expressions',examples:{defaultCount:5,style:'native everyday conversational usage',priority:'frequent real-life situations and natural collocations',avoid:'stiff textbook wording, contrived scenarios, forced rare senses',respectActualRegister:true,naturalContractionsQuestionsAndReplies:true,naturalKoreanTranslations:true,englishSeparator:'real blank line',koreanAlignment:'one translation per example',literalBackslashNForbidden:true},preserveOnEdit:['id','due','fsrs','reps','interval','lapses','createdAt','review history','unknown fields','images'],deck:'English'},images:{topPriority:'native-speaker first mental image for target taught sense',sourceLookupPolicy:'do not use Naver Dictionary/Open Dictionary PRO as image source; find suitable images elsewhere on the web',defaultAddCount:1,multipleImagesOnlyWhenExplicitlyRequested:false,polysemyDefaultCount:2,multipleImagesPolicy:'Use 2 for clearly distinct taught senses; use 3 only on explicit request or when 3 clearly separate taught senses need coverage',externalImageUrlsOnly:true,generatedImagesAllowed:false,routineImageChangesDbOnly:true,routineImageMigrationsAllowed:false,imageChangesBumpAppVersion:false,anatomyPolicy:'Prefer identifiable real contextual photos, with visual markers when useful',legacyFields:['imageUrl','imageSource','imageSourceUrl','imageSense'],multiField:'images',multiShape:{url:'http/https image',source:'legacy metadata; not displayed',sourceUrl:'legacy metadata; not displayed',sense:'short Korean scene-intent caption displayed under image'},maxRendered:3,legacyPrimaryFallback:true,dedupeByUrl:true,mergeDuplicateMetadata:true,showSourceInUi:false,showSceneIntentCaption:true,visibleBeforeReveal:false,captionVisibleBeforeReveal:false,editorImageSlots:3,editorMirrorsFirstSlotToLegacy:true},dbWrites:{workflow:['discover Supabase tools if needed','live read and case-insensitive duplicate check','narrow JSONB write','re-query and verify','report verified result'],preserveWholePayloadAndUnknownFields:true,preserveSchedulingAndReviewHistory:true,verifyFields:['target content','card count','real line breaks','image metadata','due','reps','fsrs'],clearMutationRequestsNeedReconfirmation:false,doNotClaimUnavailableBeforeActualToolAttempt:true,reportActualToolErrors:true},review:{scheduler:'ts-fsrs@5.4.1 / FSRS 6',retention:.9,learningSteps:['1m','10m'],relearningSteps:['10m'],preserveV24InitialReadyWait:true},tts:{stableBaseline:'v28',postSpeechLockMs:500,noCancelRetryQueue:true},uiSync:{responsive:true,desktopReviewViewportFit:true,desktopReviewRevealFit:true,desktopReviewAdaptiveFill:true,mobileReviewLayoutPreserved:true,recentlyAddedCards:{pinMinutes:30,redDot:true},finishedHtmlDirectlyOnPatchRequest:true,editModalBackdropDismiss:false}});
+const WORDFLOW_PATCH_NOTES=Object.freeze({v64:'Polish vocabulary list: fixed control widths, horizontal example/note buttons, consistent counts/actions, compact toolbar and responsive mobile cards.',v63:'Fix sentence list: reserve widths for answer, note, review count and actions; keep headings/buttons horizontal; use stacked mobile rows.',v62:'Add read-only Wordflow rules dialog in Data settings: Korean summary, canonical handoff, structured rules and patch notes.',rules20260927:'Require 5 realistic everyday native-usage examples with common contexts, natural collocations and conversational phrasing; preserve actual register. Handoff/rules update only.',v61:'Remove routine save success/progress toasts; retain immediate server writes, passive sync status, failure and conflict notices.',v60:'Remove sync-time dimming and redundant review rendering; preserve unchanged review DOM and completed queue position; retain immediate saves, notifications and conflict protection.',v19:'Unified vocabulary deck to English while preserving FSRS.',v24:'Fixed initial review race by waiting for FSRS/cloud init.',v28:'Stable TTS playback lock; no cancel/retry queue; 500ms post-speech lock.',v32:'Reverted vocabulary red highlights; sentence red highlights retained.',v33:'Added image-first learning tab, no FSRS.',v36:'Vocabulary URL image fields and pre-reveal image hints.',v40:'Long edit modal scroll fix.',v41:'UI version derives from APP_VERSION.',v42:'Full image preview in editor.',v43:'Recently-added vocab pinned 30m.',v44:'Recent card red dot.',v45:'Render up to 3 related images from images[] with legacy primary fallback/dedupe; desktop gallery/mobile swipe; editor preserves images[].',v46:"One-time targeted migration refreshes the provocative card's related images with clearer examples and sense labels; migrated cloud payloads are marked dirty for re-sync.",v47:'Image UI now hides source/source links and shows only short scene-intent captions; review captions reveal with the answer; duplicate legacy/images URLs merge caption metadata; editor source fields removed.',v48:'Desktop vocabulary review now auto-compacts to viewport height: smaller adaptive image/padding/type/spacing on PC while mobile layout stays unchanged.',v49:'Vocabulary review removes the desktop review heading/subtitle to reclaim vertical space; revealed answers compact further and the flashcard becomes viewport-bounded with internal overflow so long meanings/notes never spill below the screen.',v50:'Desktop vocabulary review measures actual card content and uses spare vertical room to enlarge images, word text, examples and revealed answer text; long cards fall back to the compact viewport-safe layout.',v51:'Vocabulary editor exposes three image URL + scene-caption slots; slot 1 mirrors to legacy primary fields; default image authoring count is one unless the user explicitly requests multiple images.',v52:'Vocabulary add/edit modal ignores clicks on the dimmed backdrop so accidental outside clicks cannot discard in-progress edits; exit remains explicit via Cancel or Save.',v53:'Image authoring now defaults to 1 image, but clearly split polysemous words default to 2 intuitive images; added a targeted calf migration replacing the sketch-like leg image with an obvious real calf photo and adding a calf-animal photo.',v54:'Mandatory Wordflow DB-write completion gate: explicit data mutations must proceed through Supabase discovery, live read, narrow write, and re-query verification before any final response.',v55:'Temporary augment-image migration build, superseded by v56.',v56:'Handoff hardening: external URL images only, never generated; routine image data changes never bump HTML or use migrations; clear DB mutations execute without re-confirmation; anatomy/body-part images prioritize identifiable real photos and visual markers.',v57:'Vocabulary review images are hidden before answer reveal and become visible only after reveal; detail-modal images remain unchanged.',v59:'Server-first sync with version-checked JSON patches, blocked legacy writes, private server history, foreground refresh and recovery-only local drafts.',v58:'Align WORDFLOW_RULES with current handoff: post-reveal images, distinct-sense image counts, external URL and DB-only image workflow, and verified narrow DB writes. Runtime behavior unchanged.'});
+document.querySelectorAll('[data-app-version]').forEach(el=>el.textContent=APP_VERSION);document.getElementById('buildDateLabel').textContent=APP_BUILD_DATE;
+const LEARNING_CATEGORIES=Object.freeze([{id:'action',name:'동작',icon:'🏃',desc:'몸짓 · 자세 · 움직임'},{id:'body',name:'신체',icon:'🧍',desc:'얼굴 · 손 · 다리 · 세부 부위'},{id:'taste',name:'맛',icon:'🍋',desc:'맛 · 향 · 음식의 느낌'},{id:'color',name:'색깔',icon:'🎨',desc:'색 이름 · 비슷한 색의 차이'}]);
+const localDateKey=value=>{const d=value?new Date(value):new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`},todayKey=()=>localDateKey();
+const seed={cards:[],decks:['English'],reviews:[],sentences:[],sentenceReviews:[],learningItems:[],migrations:{},streak:{lastDate:null,count:0},scheduler:{type:'FSRS',version:6,package:'ts-fsrs@5.4.1',requestRetention:.9},syncMeta:{dirty:false,lastSyncedAt:null,userId:null}};
+function load(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY))||structuredClone(seed)}catch{return structuredClone(seed)}}
+const previousLocalState=load();
+try{if(previousLocalState.cards?.length){const k='wordflow_recovery_v59',a=JSON.parse(localStorage.getItem(k)||'[]');a.push({savedAt:new Date().toISOString(),reason:'v59 시작 전 기기 사본',payload:previousLocalState});localStorage.setItem(k,JSON.stringify(a.slice(-20)))}}catch(e){console.error(e)}
+let state=structuredClone(seed);
+function applyV46ProvocativeImageMigration(card){if(!card||String(card.word||'').trim().toLowerCase()!=='provocative')return false;const nextImages=[{url:'https://commons.wikimedia.org/wiki/Special:FilePath/Anger%20during%20a%20protest%20by%20David%20Shankbone.jpg',source:'Wikimedia Commons · David Shankbone · CC BY 3.0',sourceUrl:'https://commons.wikimedia.org/wiki/File:Anger_during_a_protest_by_David_Shankbone.jpg',sense:'provocative remark / argument'},{url:'https://commons.wikimedia.org/wiki/Special:FilePath/MEAT%20IS%20IMMORAL%20billboard%20%28Los%20Angeles%202020%29.jpg',source:'Wikimedia Commons · controversial billboard',sourceUrl:'https://commons.wikimedia.org/wiki/File:MEAT_IS_IMMORAL_billboard_(Los_Angeles_2020).jpg',sense:'provocative public message / slogan'}];const prevJson=JSON.stringify(Array.isArray(card.images)?card.images:[]),nextJson=JSON.stringify(nextImages);if(prevJson===nextJson)return false;card.images=nextImages;return true}
+function applyV53CalfImageMigration(card){if(!card||String(card.word||'').trim().toLowerCase()!=='calf')return false;const nextImages=[{url:'https://commons.wikimedia.org/wiki/Special:FilePath/Kaleb%27s%20calf.JPG',source:"Wikimedia Commons · Kaleb's calf",sourceUrl:'https://commons.wikimedia.org/wiki/File:Kaleb%27s_calf.JPG',sense:'사람 다리 뒤쪽의 불룩한 근육, 즉 종아리를 한눈에 알아볼 수 있게 보여주는 실제 사진'},{url:'https://commons.wikimedia.org/wiki/Special:FilePath/Calf%20animal.jpg',source:'Wikimedia Commons · Calf animal',sourceUrl:'https://commons.wikimedia.org/wiki/File:Calf_animal.jpg',sense:'소의 어린 새끼인 송아지를 바로 보여주는 직관적인 사진'}];const nextPrimary=nextImages[0].url,nextPrimarySense=nextImages[0].sense;const prev=JSON.stringify({imageUrl:card.imageUrl||'',imageSense:card.imageSense||'',images:Array.isArray(card.images)?card.images:[]});const next=JSON.stringify({imageUrl:nextPrimary,imageSense:nextPrimarySense,images:nextImages});if(prev===next)return false;card.imageUrl=nextPrimary;card.imageSense=nextPrimarySense;card.images=nextImages;return true}
+function migrateState(){if(!state||!Array.isArray(state.cards))state=structuredClone(seed);if(!Array.isArray(state.decks)||!state.decks.length)state.decks=['English'];if(!Array.isArray(state.reviews))state.reviews=[];if(!Array.isArray(state.sentences))state.sentences=[];if(!Array.isArray(state.sentenceReviews))state.sentenceReviews=[];if(!Array.isArray(state.learningItems))state.learningItems=[];if(!state.streak)state.streak={lastDate:null,count:0};if(!state.migrations)state.migrations={};if(!state.scheduler)state.scheduler={type:'FSRS',version:6};if(!state.syncMeta)state.syncMeta={dirty:false,lastSyncedAt:null,userId:null};let changed=false;for(const c of state.cards){if(!c.deck){c.deck='English';changed=true}if(!state.decks.includes(c.deck))state.decks.push(c.deck)}localStorage.setItem(STORAGE_KEY,JSON.stringify(state));return changed}migrateState();
+let cloudClient=null,cloudUser=null,cloudPushTimer=null,cloudBusy=false,cloudInitPromise=null,fsrsLib=null,fsrsScheduler=null,fsrsReady=false,fsrsLoadError=null,fsrsInitPromise=null,queue=[],currentIndex=0,answeredToday=0,sentenceQueue=[],sentenceCurrentIndex=0,answeredSentenceToday=0,editingCardId=null,editingSentenceId=null,editingLearningId=null,pendingLearningImage='',learningCategory='all',learningFavoritesOnly=false,cardDueVisible=false,sentenceDueVisible=false,cardDueSort='asc',sentenceDueSort='asc';
+function esc(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}function jsEsc(s=''){return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")}
+function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800)}
+function safeHttpUrl(value){const raw=String(value||'').trim();if(!raw)return '';try{const u=new URL(raw,location.href);if(u.protocol==='http:'||u.protocol==='https:')return u.href}catch{}return ''}
+function getWordImages(card){const out=[],byUrl=new Map();const push=(raw={})=>{const url=safeHttpUrl(raw.url||raw.imageUrl);if(!url)return;const incoming={url,source:String(raw.source||raw.imageSource||'').trim(),sourceUrl:safeHttpUrl(raw.sourceUrl||raw.imageSourceUrl),sense:String(raw.sense||raw.imageSense||'').trim()};const existing=byUrl.get(url);if(existing){if(!existing.sense&&incoming.sense)existing.sense=incoming.sense;if(!existing.source&&incoming.source)existing.source=incoming.source;if(!existing.sourceUrl&&incoming.sourceUrl)existing.sourceUrl=incoming.sourceUrl;return}if(out.length>=3)return;out.push(incoming);byUrl.set(url,incoming)};push({url:card?.imageUrl,source:card?.imageSource,sourceUrl:card?.imageSourceUrl,sense:card?.imageSense});if(Array.isArray(card?.images))card.images.forEach(push);return out.slice(0,3)}
+function wordImageMarkup(card,{review=false,detail=false}={}){const images=getWordImages(card);if(!images.length)return '';const loading=review?'eager':'lazy';const tiles=images.map((img,i)=>{const caption=img.sense?`<div class="word-image-caption ${review?'review-image-caption':''}">${esc(img.sense)}</div>`:'';return `<div class="word-image-tile"><img src="${img.url}" alt="${esc(card?.word||'단어')} 연관 이미지 ${i+1}" loading="${loading}" onerror="this.closest('.word-image-tile').classList.add('broken')">${caption}</div>`}).join('');return `<div class="word-image-gallery ${images.length===1?'single':'multi'} ${review?'review-image-gallery':''} ${detail?'detail-word-image-gallery':''}" data-image-count="${images.length}">${tiles}</div>`}
+function getEditorImageSlots(card){const imgs=getWordImages(card);return [0,1,2].map(i=>imgs[i]||{url:'',sense:''})}
+function buildImagesFromEditor(card){const existingByUrl=new Map(),mergeExisting=(raw={})=>{const url=safeHttpUrl(raw.url||raw.imageUrl);if(!url)return;const prev=existingByUrl.get(url)||{};existingByUrl.set(url,{...prev,...raw,url,source:String(raw.source||raw.imageSource||prev.source||'').trim(),sourceUrl:safeHttpUrl(raw.sourceUrl||raw.imageSourceUrl||prev.sourceUrl),sense:String(raw.sense||raw.imageSense||prev.sense||'').trim()})};if(card){mergeExisting({url:card.imageUrl,source:card.imageSource,sourceUrl:card.imageSourceUrl,sense:card.imageSense});if(Array.isArray(card.images))card.images.forEach(mergeExisting)}const out=[],seen=new Set();for(let slot=1;slot<=3;slot++){const url=safeHttpUrl(document.getElementById(`fImageUrl${slot}`)?.value||'');if(!url||seen.has(url))continue;seen.add(url);const sense=(document.getElementById(`fImageSense${slot}`)?.value||'').trim(),base=existingByUrl.get(url)||{};out.push({...base,url,sense})}return out}
+function updateWordImagePreview(slot=1){const wrap=document.getElementById(`wordImagePreview${slot}`),img=document.getElementById(`wordImagePreviewImg${slot}`),url=safeHttpUrl(document.getElementById(`fImageUrl${slot}`)?.value||'');if(!wrap||!img)return;if(url){img.src=url;wrap.classList.add('show')}else{img.removeAttribute('src');wrap.classList.remove('show')}}
+function escapeRegex(s=''){return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}function wordFormPattern(base=''){const w=String(base).trim().toLowerCase(),e=escapeRegex(w);if(w==='be')return '(?:am|is|are|was|were|be|been|being)';if(w==='have')return '(?:have|has|had|having)';if(w==='do')return '(?:do|does|did|done|doing)';if(w==='go')return '(?:go|goes|went|gone|going)';return `(?:${e}|${e}s|${e}es|${e}ed|${e}ing)`}function targetRegex(target=''){const clean=String(target).replace(/~+/g,'').trim();if(!clean)return null;const parts=clean.split(/\s+/);let pattern=wordFormPattern(parts[0]);if(parts.length>1)pattern+=`\\s+${parts.slice(1).map(escapeRegex).join('\\s+')}`;try{return new RegExp(`\\b(${pattern})\\b`,'gi')}catch{return null}}function highlightTarget(text,target){const raw=String(text||''),re=targetRegex(target);if(!re)return esc(raw);let out='',last=0,m;while((m=re.exec(raw))!==null){out+=esc(raw.slice(last,m.index))+`<strong class="example-target">${esc(m[0])}</strong>`;last=m.index+m[0].length;if(!m[0].length)re.lastIndex++}return out+esc(raw.slice(last))}function splitExampleLines(v){return String(v||'').replace(/\\n/g,'\n').split(/\n+/).map(x=>x.trim()).filter(Boolean)}function formatExampleContext(context,target,contextKo=''){const ex=splitExampleLines(context),ko=splitExampleLines(contextKo);return ex.map((x,i)=>`<span class="example-block"><span>${highlightTarget(x,target)}</span>${ko[i]?`<span class="example-translation">→ ${esc(ko[i])}</span>`:''}</span>`).join('')}
+function serializeFsrsCard(card){return{version:6,due:new Date(card.due).toISOString(),stability:Number(card.stability)||0,difficulty:Number(card.difficulty)||0,elapsed_days:Number(card.elapsed_days)||0,scheduled_days:Number(card.scheduled_days)||0,reps:Number(card.reps)||0,lapses:Number(card.lapses)||0,state:Number(card.state)||0,last_review:card.last_review?new Date(card.last_review).toISOString():null}}function hydrateFsrsCard(card){const f=card?.fsrs;if(!f)return null;return{due:new Date(f.due),stability:Number(f.stability)||0,difficulty:Number(f.difficulty)||0,elapsed_days:Number(f.elapsed_days)||0,scheduled_days:Number(f.scheduled_days)||0,reps:Number(f.reps)||0,lapses:Number(f.lapses)||0,state:Number(f.state)||0,last_review:f.last_review?new Date(f.last_review):undefined}}function mirrorFsrsToWordflow(card,f){card.fsrs=serializeFsrsCard(f);card.due=card.fsrs.due;card.reps=card.fsrs.reps;card.interval=card.fsrs.scheduled_days;card.lapses=card.fsrs.lapses}const fsrsGradeFromWordflow=r=>Number(r)+1;
+function migrateCollectionToFsrs(items,reviews,key){if(!fsrsReady)return false;let changed=false;for(const item of items){if(item.fsrs?.version===6)continue;const history=reviews.filter(r=>r[key]===item.id).sort((a,b)=>new Date(a.date)-new Date(b.date));let f=fsrsLib.createEmptyCard(new Date(item.createdAt||history[0]?.date||Date.now()));for(const r of history){try{f=fsrsScheduler.next(f,new Date(r.date),fsrsGradeFromWordflow(r.rating)).card}catch{}}mirrorFsrsToWordflow(item,f);changed=true}return changed}function migrateCardsToFsrs(){return migrateCollectionToFsrs(state.cards,state.reviews,'cardId')}function migrateSentencesToFsrs(){return migrateCollectionToFsrs(state.sentences,state.sentenceReviews,'sentenceId')}
+async function initFsrs(){try{fsrsLib=await import(FSRS_PACKAGE_URL);fsrsScheduler=fsrsLib.fsrs(FSRS_CONFIG);fsrsReady=true;fsrsLoadError=null;migrateCardsToFsrs();migrateSentencesToFsrs();state.scheduler={...(state.scheduler||{}),type:'FSRS',version:6,package:'ts-fsrs@5.4.1',requestRetention:.9,learningSteps:['1m','10m'],relearningSteps:['10m'],maximumInterval:36500,enableFuzz:true};localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAll()}catch(e){fsrsLoadError=e;console.error(e);toast('FSRS 라이브러리를 불러오지 못했어요.')}}async function ensureFsrsReady(){if(!canChange())return false;if(fsrsReady)return true;if(!fsrsInitPromise)fsrsInitPromise=initFsrs();try{await fsrsInitPromise}catch{}return !!fsrsReady}async function waitForInitialReviewReady(){const ok=await ensureFsrsReady();if(cloudInitPromise)try{await cloudInitPromise}catch{}if(!ok){toast('FSRS 복습 엔진을 준비하지 못했어요.');return false}if(!canChange())return false;return true}
+function save(options={}){if(!canChange()){archiveLocal(state,'저장하지 못한 변경');if(serverBase){state=structuredClone(serverBase);renderAll()}return;}if(!state.syncMeta)state.syncMeta={dirty:false,lastSyncedAt:null,userId:null};if(options.markDirty!==false)state.syncMeta.dirty=true;localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAll();if(cloudUser&&options.cloud!==false)scheduleCloudPush()}
+const dueTime=v=>{const t=new Date(v).getTime();return Number.isFinite(t)?t:0},dueCards=()=>state.cards.filter(c=>dueTime(c.due)<=Date.now()),dueSentences=()=>state.sentences.filter(c=>dueTime(c.due)<=Date.now());function reviewedCardIdsToday(){const t=todayKey();return new Set(state.reviews.filter(r=>localDateKey(r.date)===t).map(r=>r.cardId))}function reviewedSentenceIdsToday(){const t=todayKey();return new Set(state.sentenceReviews.filter(r=>localDateKey(r.date)===t).map(r=>r.sentenceId))}function fmtDate(iso){const d=new Date(iso),n=new Date();n.setHours(0,0,0,0);d.setHours(0,0,0,0);const diff=Math.round((d-n)/86400000);return diff<=0?'오늘':diff===1?'내일':`${diff}일 후`}
+function switchView(id){document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id===id));const nav=id==='sentenceReview'?'sentences':id;document.querySelectorAll('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===nav));if(id==='cards')renderCards();if(id==='learn')renderLearning();if(id==='sentences')renderSentences()}document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
+function renderAll(){const due=dueCards(),done=reviewedCardIdsToday().size;document.getElementById('schedulerBadge').textContent=fsrsReady?'FSRS 6 · Anki 기본 · 기억률 90%':fsrsLoadError?'FSRS 로드 실패':'FSRS · 불러오는 중';document.getElementById('dueCount').textContent=due.length;document.getElementById('wordDoneHomeCount').textContent=done;document.getElementById('totalCount').textContent=state.cards.length;document.getElementById('learnedCount').textContent=state.cards.filter(c=>(c.reps||0)>0).length;document.getElementById('streakNum').textContent=state.streak?.count||0;const total=done+due.length;document.getElementById('dayProgress').style.width=total?`${Math.round(done/total*100)}%`:'100%';document.getElementById('heroTitle').textContent=due.length?`${due.length}개의 단어가 오늘 다시 만날 차례예요.`:'오늘 복습은 끝났어요 🎉';document.getElementById('heroDesc').textContent=due.length?'카드를 보고 뜻을 먼저 떠올린 뒤 체감 난이도를 눌러주세요.':'새 단어를 추가하거나 내일 다시 돌아오세요.';const sd=dueSentences();document.getElementById('sentenceDueHomeCount').textContent=sd.length;document.getElementById('sentenceDoneHomeCount').textContent=reviewedSentenceIdsToday().size;document.getElementById('sentenceTotalHomeCount').textContent=state.sentences.length;document.getElementById('sentenceLearnedHomeCount').textContent=state.sentences.filter(x=>(x.reps||0)>0).length;renderDeckSummary();renderDeckFilter();renderCards();renderLearning();renderSentences();if(!serverReady){document.getElementById('heroTitle').textContent='서버 연결을 확인해주세요';document.getElementById('heroDesc').textContent='데이터·동기화에서 로그인하면 최신 단어장을 불러옵니다.';for(const id of ['dueCount','totalCount','wordDoneHomeCount','learnedCount'])document.getElementById(id).textContent='—'}}
+function renderDeckSummary(){const el=document.getElementById('deckSummary');el.innerHTML=state.decks.map(name=>{const cards=state.cards.filter(c=>c.deck===name),due=cards.filter(c=>dueTime(c.due)<=Date.now()).length;return `<div class="deck-row"><div><div class="deck-name">${esc(name)}</div><div class="deck-meta">${cards.length} cards</div></div><div class="pill">${due} due</div><div class="pill">${cards.length?Math.round(cards.reduce((s,c)=>s+(c.reps||0),0)/cards.length):0} avg reps</div><button class="btn" onclick="reviewDeck('${jsEsc(name)}')">복습</button></div>`}).join('')}
+function renderDeckFilter(){const decks=[...new Set(state.decks)].sort(),sel=document.getElementById('deckFilter'),add=document.getElementById('fDeck');if(sel){const cur=sel.value;sel.innerHTML='<option value="all">모든 덱</option>'+decks.map(d=>`<option>${esc(d)}</option>`).join('');if([...sel.options].some(o=>o.value===cur))sel.value=cur}if(add){const cur=add.value;add.innerHTML=decks.map(d=>`<option>${esc(d)}</option>`).join('');if([...add.options].some(o=>o.value===cur))add.value=cur}}
+const RECENT_CARD_PIN_MS=30*60*1000;function isRecentlyAddedCard(c){const t=new Date(c?.createdAt||0).getTime(),age=Date.now()-t;return t&&age>=0&&age<=RECENT_CARD_PIN_MS}function compareCardsForVocabularyList(a,b){const ar=isRecentlyAddedCard(a),br=isRecentlyAddedCard(b);if(ar!==br)return ar?-1:1;if(ar&&br){const d=new Date(b.createdAt)-new Date(a.createdAt);if(d)return d}return cardDueSort==='desc'?dueTime(b.due)-dueTime(a.due):dueTime(a.due)-dueTime(b.due)}
+function renderCards(){const body=document.getElementById('cardsBody');if(!body)return;const q=(document.getElementById('searchInput')?.value||'').toLowerCase(),deck=document.getElementById('deckFilter')?.value||'all';const cards=state.cards.filter(c=>{const imageText=Array.isArray(c.images)?c.images.flatMap(x=>[x?.source,x?.sense,x?.sourceUrl]).join(' '):'';return(deck==='all'||c.deck===deck)&&[c.word,c.pronunciation,c.meaning,c.context,c.contextKo,c.note,c.imageSource,imageText].join(' ').toLowerCase().includes(q)}).sort(compareCardsForVocabularyList);body.innerHTML=cards.length?cards.map(c=>{const first=getWordImages(c)[0];return `<tr><td class="vocab-word-cell"><div class="word-image-thumb-wrap">${first?`<img class="word-image-thumb" src="${first.url}" onerror="this.style.display='none'">`:''}<div class="word-wrap"><div class="word-line"><strong>${esc(c.word)}</strong>${isRecentlyAddedCard(c)?'<span class="recent-card-dot"></span>':''}<button class="speaker-btn" onclick="speakWord('${jsEsc(c.word)}')">🔊</button></div>${c.pronunciation?`<span class="pronunciation">${esc(c.pronunciation)}</span>`:''}</div></div></td><td class="vocab-meaning-cell">${esc(c.meaning)}</td><td class="vocab-example-cell">${c.context?`<button class="detail-btn" onclick="openDetailModal('${c.id}','context')">예문 보기</button>`:'<span class="vocab-empty">없음</span>'}</td><td class="vocab-note-cell">${c.note?`<button class="detail-btn" onclick="openDetailModal('${c.id}','note')">메모 보기</button>`:'<span class="vocab-empty">없음</span>'}</td><td class="vocab-deck-cell"><span class="vocab-deck">${esc(c.deck)}</span></td><td class="due-col ${cardDueVisible?'':'is-hidden'}">${fmtDate(c.due)}</td><td class="vocab-reps">${c.reps||0}<span class="vocab-reps-unit">회</span></td><td class="vocab-actions-cell"><div class="row-actions"><button class="icon-btn" aria-label="단어 수정" title="단어 수정" onclick="openModal('${c.id}')">✎</button><button class="icon-btn" aria-label="단어 삭제" title="단어 삭제" onclick="deleteCard('${c.id}')">✕</button></div></td></tr>`}).join(''):'<tr><td colspan="8"><div class="empty">검색 결과가 없어요.</div></td></tr>';document.querySelectorAll('#cards .due-col').forEach(el=>el.classList.toggle('is-hidden',!cardDueVisible))}
+function toggleCardDue(){cardDueVisible=!cardDueVisible;document.getElementById('cardDueToggle').textContent=cardDueVisible?'다음 복습 숨기기':'다음 복습 보기';document.getElementById('cardDueSort').style.display=cardDueVisible?'':'none';renderCards()}function setCardDueSort(v){cardDueSort=v==='desc'?'desc':'asc';renderCards()}
+function openDetailModal(id,type){const c=state.cards.find(x=>x.id===id);if(!c)return;document.getElementById('detailModalTitle').textContent=type==='context'?'예문':'메모';document.getElementById('detailModalWord').textContent=c.pronunciation?`${c.word}  ${c.pronunciation}`:c.word;document.getElementById('detailModalContent').innerHTML=wordImageMarkup(c,{detail:true})+(type==='context'?(c.context?formatExampleContext(c.context,c.word,c.contextKo):'예문이 없습니다.'):`<div style="white-space:pre-wrap">${esc(c.note||'메모가 없습니다.')}</div>`);document.getElementById('detailModalBackdrop').classList.add('show')}function closeDetailModal(){document.getElementById('detailModalBackdrop').classList.remove('show')}
+function openModal(id=null){if(!canChange())return;editingCardId=id;renderDeckFilter();const c=id?state.cards.find(x=>x.id===id):null;document.getElementById('cardModalTitle').textContent=c?'단어 수정':'새 단어 추가';document.getElementById('cardSaveBtn').textContent=c?'수정 저장':'저장';for(const [fid,key] of [['fWord','word'],['fPronunciation','pronunciation'],['fMeaning','meaning'],['fContext','context'],['fContextKo','contextKo'],['fNote','note']])document.getElementById(fid).value=c?.[key]||'';const slots=getEditorImageSlots(c);for(let i=1;i<=3;i++){document.getElementById(`fImageUrl${i}`).value=slots[i-1]?.url||'';document.getElementById(`fImageSense${i}`).value=slots[i-1]?.sense||'';updateWordImagePreview(i)}if(c&&[...document.getElementById('fDeck').options].some(o=>o.value===c.deck))document.getElementById('fDeck').value=c.deck;document.getElementById('modalBackdrop').classList.add('show')}function closeModal(){document.getElementById('modalBackdrop').classList.remove('show');editingCardId=null}
+function saveCard(){if(!canChange())return;const current=editingCardId?state.cards.find(x=>x.id===editingCardId):null,images=buildImagesFromEditor(current),primary=images[0]||{};const values={word:document.getElementById('fWord').value.trim(),pronunciation:document.getElementById('fPronunciation').value.trim(),meaning:document.getElementById('fMeaning').value.trim(),context:document.getElementById('fContext').value.trim(),contextKo:document.getElementById('fContextKo').value.trim(),note:document.getElementById('fNote').value.trim(),deck:document.getElementById('fDeck').value||'English',imageUrl:primary.url||'',imageSense:primary.sense||'',imageSource:String(primary.source||''),imageSourceUrl:safeHttpUrl(primary.sourceUrl),images};if(!values.word||!values.meaning){toast('단어와 뜻은 꼭 입력해주세요.');return}if(editingCardId){const c=current;if(!c)return;Object.assign(c,values);save();closeModal();return}const createdAt=new Date().toISOString(),c={id:crypto.randomUUID(),...values,interval:0,ease:2.5,reps:0,due:createdAt,createdAt};if(fsrsReady)mirrorFsrsToWordflow(c,fsrsLib.createEmptyCard(new Date(createdAt)));state.cards.push(c);save();closeModal();}function deleteCard(id){if(!canChange())return;if(!confirm('이 카드를 삭제할까요?'))return;state.cards=state.cards.filter(c=>c.id!==id);state.reviews=state.reviews.filter(r=>r.cardId!==id);save()}
+function openDeckManager(){if(!canChange())return;renderDeckManager();document.getElementById('deckModalBackdrop').classList.add('show')}function closeDeckManager(){document.getElementById('deckModalBackdrop').classList.remove('show')}function renderDeckManager(){document.getElementById('deckManageList').innerHTML=state.decks.map(name=>`<div class="deck-manage-row"><div><strong>${esc(name)}</strong><div class="deck-meta">${state.cards.filter(c=>c.deck===name).length}개의 카드</div></div><button class="btn small" onclick="renameDeck('${jsEsc(name)}')">이름 변경</button><button class="btn small" onclick="deleteDeck('${jsEsc(name)}')">삭제</button></div>`).join('')}function addDeck(){if(!canChange())return;const i=document.getElementById('newDeckName'),name=i.value.trim();if(!name||state.decks.some(d=>d.toLowerCase()===name.toLowerCase()))return;state.decks.push(name);i.value='';save();renderDeckManager()}function renameDeck(old){if(!canChange())return;const n=prompt('새 덱 이름',old);if(!n||n.trim()===old)return;const name=n.trim();state.decks=state.decks.map(d=>d===old?name:d);state.cards.forEach(c=>{if(c.deck===old)c.deck=name});save();renderDeckManager()}function deleteDeck(name){if(!canChange())return;if(!confirm(`‘${name}’ 덱을 삭제할까요?`))return;let fallback=state.decks.find(d=>d!==name)||'English';if(!state.decks.includes(fallback))state.decks.push(fallback);state.cards.forEach(c=>{if(c.deck===name)c.deck=fallback});state.decks=state.decks.filter(d=>d!==name);save();renderDeckManager()}
+
+let reviewFitTimer=null;
+function measureReviewContentHeight(card){
+  if(!card)return Infinity;
+  const cs=getComputedStyle(card),pt=parseFloat(cs.paddingTop)||0,pb=parseFloat(cs.paddingBottom)||0;
+  let total=pt+pb;
+  for(const el of card.children){
+    const es=getComputedStyle(el);if(es.display==='none')continue;
+    total+=(el.getBoundingClientRect().height||0)+(parseFloat(es.marginTop)||0)+(parseFloat(es.marginBottom)||0);
+  }
+  return total;
+}
+function fitReviewToViewport(){
+  const shell=document.getElementById('reviewShell');
+  if(!shell)return;
+  shell.classList.remove('fit-roomy','fit-spacious');
+  if(window.innerWidth<=900||window.innerHeight<=820)return;
+  const card=shell.querySelector('.flashcard');
+  if(!card||card.clientHeight<1)return;
+  const available=card.clientHeight;
+  const used=measureReviewContentHeight(card);
+  let target=used<=available*.74?'fit-spacious':used<=available*.90?'fit-roomy':'';
+  if(!target)return;
+  shell.classList.add(target);
+  let expanded=measureReviewContentHeight(card);
+  if(expanded>available*.97&&target==='fit-spacious'){
+    shell.classList.remove('fit-spacious');shell.classList.add('fit-roomy');
+    expanded=measureReviewContentHeight(card);
+  }
+  if(expanded>available*.99)shell.classList.remove('fit-roomy','fit-spacious');
+}
+function scheduleReviewFit(){
+  if(reviewFitTimer)clearTimeout(reviewFitTimer);
+  requestAnimationFrame(()=>requestAnimationFrame(fitReviewToViewport));
+  reviewFitTimer=setTimeout(fitReviewToViewport,180);
+  document.querySelectorAll('#reviewShell .word-image-tile img').forEach(img=>{
+    if(!img.complete)img.addEventListener('load',fitReviewToViewport,{once:true});
+  });
+}
+async function startReview(go=true){if(!(await waitForInitialReviewReady()))return;queue=dueCards().sort(()=>Math.random()-.5);currentIndex=0;if(go)switchView('review');renderReview()}async function reviewDeck(deck){if(!(await waitForInitialReviewReady()))return;queue=state.cards.filter(c=>c.deck===deck&&dueTime(c.due)<=Date.now()).sort(()=>Math.random()-.5);currentIndex=0;switchView('review');renderReview()}function renderReview(){const shell=document.getElementById('reviewShell');shell.classList.remove('answer-revealed','fit-roomy','fit-spacious');if(!queue.length||currentIndex>=queue.length){shell.innerHTML='<div class="card empty"><strong>오늘 복습 완료 🎉</strong><br><button class="btn primary" onclick="switchView(\'home\')">홈으로</button></div>';return}const c=queue[currentIndex];shell.innerHTML=`<div class="review-meta"><span>${esc(c.deck)} · <span class="kbd">Num + 🔊</span></span><span>${currentIndex+1} / ${queue.length}</span></div><div class="card flashcard">${wordImageMarkup(c,{review:true})}<div class="word-line"><div class="word">${esc(c.word)}</div><button class="speaker-btn" onclick="speakWord('${jsEsc(c.word)}')">🔊</button></div>${c.pronunciation?`<div class="pronunciation">${esc(c.pronunciation)}</div>`:''}${c.context?`<div class="context" id="reviewContext">${formatExampleContext(c.context,c.word,c.contextKo)}</div>`:''}<div class="answer" id="answer"><div class="meaning">${esc(c.meaning)}</div>${c.note?`<div class="note">${esc(c.note)}</div>`:''}</div></div><button class="btn primary reveal" id="revealBtn" onclick="revealAnswer()">정답 보기 <span class="kbd">Space / Num 0</span></button><div class="review-actions" id="ratingButtons" style="display:none"><button class="rate" onclick="rate(0)"><strong>전혀 모르겠음</strong><small>Again</small></button><button class="rate" onclick="rate(1)"><strong>어렵게 기억남</strong><small>Hard</small></button><button class="rate" onclick="rate(2)"><strong>기억남</strong><small>Good</small></button><button class="rate" onclick="rate(3)"><strong>아주 쉽게 기억남</strong><small>Easy</small></button></div>`;scheduleReviewFit()}function revealAnswer(){document.getElementById('reviewShell')?.classList.add('answer-revealed');document.getElementById('answer')?.classList.add('show');document.getElementById('reviewContext')?.classList.add('show-translations');document.querySelectorAll('#reviewShell .review-image-caption').forEach(el=>el.classList.add('show'));document.getElementById('revealBtn').style.display='none';document.getElementById('ratingButtons').style.display='grid';document.querySelector('#reviewShell .flashcard')?.scrollTo({top:0,behavior:'instant'});scheduleReviewFit()}
+async function rate(rating){if(!canChange())return;if(!(await ensureFsrsReady()))return;const c=queue[currentIndex],live=state.cards.find(x=>x.id===c?.id);if(!live)return;try{const now=new Date(),f=hydrateFsrsCard(live)||fsrsLib.createEmptyCard(new Date(live.createdAt||now)),result=fsrsScheduler.next(f,now,fsrsGradeFromWordflow(rating));mirrorFsrsToWordflow(live,result.card);state.reviews.push({cardId:live.id,date:now.toISOString(),rating,interval:live.interval,scheduler:'FSRS-6',stability:live.fsrs.stability,difficulty:live.fsrs.difficulty,lapses:live.fsrs.lapses,state:live.fsrs.state});updateStreak();answeredToday++;currentIndex++;save();renderReview()}catch(e){console.error(e);toast('FSRS 계산 중 오류가 발생했어요.')}}
+function updateStreak(){const t=todayKey();if(state.streak.lastDate===t)return;if(!state.streak.lastDate){state.streak={lastDate:t,count:1};return}const diff=Math.round((new Date(t+'T00:00:00')-new Date(state.streak.lastDate+'T00:00:00'))/86400000);state.streak={lastDate:t,count:diff===1?(state.streak.count||0)+1:1}}
+function learningCategoryMeta(id){return LEARNING_CATEGORIES.find(c=>c.id===id)||LEARNING_CATEGORIES[0]}function renderLearningCategories(){document.getElementById('learningCategoryGrid').innerHTML=LEARNING_CATEGORIES.map(c=>`<button class="learn-category ${learningCategory===c.id?'active':''}" onclick="setLearningCategory('${c.id}')"><div class="learn-category-icon">${c.icon}</div><div class="learn-category-name">${c.name}</div><div class="learn-category-desc">${c.desc}</div><div class="learn-category-count">${state.learningItems.filter(x=>x.category===c.id).length}개</div></button>`).join('')}function setLearningCategory(id){learningCategory=LEARNING_CATEGORIES.some(c=>c.id===id)?id:'all';learningFavoritesOnly=false;renderLearning()}function toggleLearningFavorites(){learningFavoritesOnly=!learningFavoritesOnly;renderLearning()}function renderLearning(){const g=document.getElementById('learningGallery');if(!g)return;renderLearningCategories();document.getElementById('learnAllBtn').classList.toggle('active',learningCategory==='all'&&!learningFavoritesOnly);document.getElementById('learnFavBtn').classList.toggle('active',learningFavoritesOnly);const q=(document.getElementById('learningSearchInput')?.value||'').toLowerCase();let items=[...state.learningItems];if(learningCategory!=='all')items=items.filter(x=>x.category===learningCategory);if(learningFavoritesOnly)items=items.filter(x=>x.favorite);if(q)items=items.filter(x=>[x.term,x.pronunciation,x.meaning,x.note].join(' ').toLowerCase().includes(q));items.sort((a,b)=>Number(b.favorite)-Number(a.favorite)||new Date(b.createdAt||0)-new Date(a.createdAt||0));g.innerHTML=items.length?items.map(x=>{const m=learningCategoryMeta(x.category);return `<article class="learn-card"><div class="learn-card-media" onclick="openLearningDetail('${x.id}')">${x.imageData?`<img src="${x.imageData}">`:`<div class="learn-card-placeholder">${m.icon}</div>`}</div><div class="learn-card-body"><div class="learn-card-top"><div><div class="learn-card-title">${esc(x.term)}</div>${x.pronunciation?`<div class="learn-card-pron">${esc(x.pronunciation)}</div>`:''}</div><div><button class="learn-mini-btn" onclick="speakWord('${jsEsc(x.term)}')">🔊</button><button class="learn-mini-btn favorite ${x.favorite?'on':''}" onclick="toggleLearningFavorite('${x.id}')">★</button><button class="learn-mini-btn" onclick="openLearningModal('${x.id}')">✎</button><button class="learn-mini-btn" onclick="deleteLearningItem('${x.id}')">✕</button></div></div><div class="learn-card-meaning">${esc(x.meaning)}</div>${x.note?`<div class="learn-card-note">${esc(x.note)}</div>`:''}</div></article>`}).join(''):'<div class="empty">아직 볼 카드가 없어요.</div>'}
+function renderLearningCategorySelect(){document.getElementById('lCategory').innerHTML=LEARNING_CATEGORIES.map(c=>`<option value="${c.id}">${c.icon} ${c.name}</option>`).join('')}function openLearningModal(id=null){if(!canChange())return;editingLearningId=id;renderLearningCategorySelect();const x=id?state.learningItems.find(v=>v.id===id):null;document.getElementById('learningModalTitle').textContent=x?'학습 카드 수정':'새 학습 카드';document.getElementById('learningSaveBtn').textContent=x?'수정 저장':'저장';for(const [fid,key] of [['lCategory','category'],['lTerm','term'],['lPronunciation','pronunciation'],['lMeaning','meaning'],['lNote','note']])document.getElementById(fid).value=x?.[key]||(fid==='lCategory'?'action':'');pendingLearningImage=x?.imageData||'';updateLearningImagePreview();document.getElementById('learningModalBackdrop').classList.add('show')}function closeLearningModal(){document.getElementById('learningModalBackdrop').classList.remove('show');editingLearningId=null}function clearLearningImage(){pendingLearningImage='';updateLearningImagePreview()}function updateLearningImagePreview(){const w=document.getElementById('learningImagePreview'),i=document.getElementById('learningPreviewImg');if(pendingLearningImage){i.src=pendingLearningImage;w.classList.add('show')}else{w.classList.remove('show');i.removeAttribute('src')}}function handleLearningImageFile(e){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const max=1200,scale=Math.min(1,max/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);pendingLearningImage=canvas.toDataURL('image/webp',.82);updateLearningImagePreview()};img.src=r.result};r.readAsDataURL(f)}function saveLearningItem(){if(!canChange())return;const v={category:document.getElementById('lCategory').value,term:document.getElementById('lTerm').value.trim(),pronunciation:document.getElementById('lPronunciation').value.trim(),meaning:document.getElementById('lMeaning').value.trim(),note:document.getElementById('lNote').value.trim(),imageData:pendingLearningImage};if(!v.term||!v.meaning)return;if(editingLearningId){Object.assign(state.learningItems.find(x=>x.id===editingLearningId),v)}else state.learningItems.push({id:crypto.randomUUID(),...v,favorite:false,createdAt:new Date().toISOString()});save();closeLearningModal()}function toggleLearningFavorite(id){if(!canChange())return;const x=state.learningItems.find(v=>v.id===id);if(x){x.favorite=!x.favorite;save()}}function deleteLearningItem(id){if(!canChange())return;if(confirm('이 학습 카드를 삭제할까요?')){state.learningItems=state.learningItems.filter(x=>x.id!==id);save()}}function openLearningDetail(id){const x=state.learningItems.find(v=>v.id===id);if(!x)return;document.getElementById('learningDetailContent').innerHTML=`${x.imageData?`<img class="learn-detail-image" src="${x.imageData}">`:''}<div class="learn-detail-title"><strong>${esc(x.term)}</strong><button class="speaker-btn" onclick="speakWord('${jsEsc(x.term)}')">🔊</button></div>${x.pronunciation?`<div class="pronunciation">${esc(x.pronunciation)}</div>`:''}<div class="learn-detail-meaning">${esc(x.meaning)}</div>${x.note?`<div class="learn-detail-note">${esc(x.note)}</div>`:''}`;document.getElementById('learningDetailBackdrop').classList.add('show')}function closeLearningDetail(){document.getElementById('learningDetailBackdrop').classList.remove('show')}
+function sentenceMarkup(s=''){return esc(s).replace(/\*\*([^*]+)\*\*/g,'<span class="sentence-highlight">$1</span>')}function renderSentences(){const body=document.getElementById('sentencesBody');if(!body)return;const q=(document.getElementById('sentenceSearchInput')?.value||'').toLowerCase();const items=state.sentences.filter(x=>[x.korean,...(x.answers||[]),x.note].join(' ').toLowerCase().includes(q)).sort((a,b)=>sentenceDueSort==='desc'?dueTime(b.due)-dueTime(a.due):dueTime(a.due)-dueTime(b.due));body.innerHTML=items.length?items.map(x=>`<tr><td class="sentence-list-text">${sentenceMarkup(x.korean)}</td><td class="sentence-answer-cell"><button class="detail-btn sentence-answer-btn" onclick="openSentenceDetail('${x.id}')">정답 보기 <span class="sentence-answer-count">${x.answers?.length||0}</span></button></td><td class="sentence-note-cell">${x.note?`<button class="detail-btn" onclick="openSentenceNote('${x.id}')">메모 보기</button>`:'<span class="sentence-no-note">메모 없음</span>'}</td><td class="due-col ${sentenceDueVisible?'':'is-hidden'}" data-label="다음 복습">${fmtDate(x.due)}</td><td class="sentence-reps" data-label="복습 횟수">${x.reps||0}<span class="sentence-reps-unit">회</span></td><td class="sentence-edit-cell"><div class="sentence-edit-actions"><button class="icon-btn" aria-label="문장 수정" title="문장 수정" onclick="openSentenceModal('${x.id}')">✎</button><button class="icon-btn" aria-label="문장 삭제" title="문장 삭제" onclick="deleteSentence('${x.id}')">✕</button></div></td></tr>`).join(''):'<tr><td colspan="6"><div class="empty">문장이 없어요.</div></td></tr>';document.querySelectorAll('#sentences .due-col').forEach(el=>el.classList.toggle('is-hidden',!sentenceDueVisible))}function toggleSentenceDue(){sentenceDueVisible=!sentenceDueVisible;document.getElementById('sentenceDueToggle').textContent=sentenceDueVisible?'다음 복습 숨기기':'다음 복습 보기';document.getElementById('sentenceDueSort').style.display=sentenceDueVisible?'':'none';renderSentences()}function setSentenceDueSort(v){sentenceDueSort=v==='desc'?'desc':'asc';renderSentences()}function openSentenceDetail(id){const x=state.sentences.find(v=>v.id===id);if(!x)return;document.getElementById('detailModalTitle').textContent='영어 정답';document.getElementById('detailModalWord').textContent=x.korean;document.getElementById('detailModalContent').innerHTML=(x.answers||[]).map(sentenceMarkup).join('<br><br>');document.getElementById('detailModalBackdrop').classList.add('show')}function openSentenceNote(id){const x=state.sentences.find(v=>v.id===id);if(!x)return;document.getElementById('detailModalTitle').textContent='문장 메모';document.getElementById('detailModalWord').textContent=x.korean;document.getElementById('detailModalContent').textContent=x.note||'메모가 없습니다.';document.getElementById('detailModalBackdrop').classList.add('show')}function openSentenceModal(id=null){if(!canChange())return;editingSentenceId=id;const x=id?state.sentences.find(v=>v.id===id):null;document.getElementById('sentenceModalTitle').textContent=x?'문장 수정':'새 문장 추가';document.getElementById('sentenceSaveBtn').textContent=x?'수정 저장':'저장';document.getElementById('sKorean').value=x?.korean||'';document.getElementById('sAnswers').value=(x?.answers||[]).join('\n');document.getElementById('sNote').value=x?.note||'';document.getElementById('sentenceModalBackdrop').classList.add('show')}function closeSentenceModal(){document.getElementById('sentenceModalBackdrop').classList.remove('show');editingSentenceId=null}function saveSentence(){if(!canChange())return;const korean=document.getElementById('sKorean').value.trim(),answers=document.getElementById('sAnswers').value.split('\n').map(x=>x.trim()).filter(Boolean),note=document.getElementById('sNote').value.trim();if(!korean||!answers.length)return;if(editingSentenceId){Object.assign(state.sentences.find(x=>x.id===editingSentenceId),{korean,answers,note})}else{const createdAt=new Date().toISOString(),x={id:crypto.randomUUID(),korean,answers,note,interval:0,reps:0,due:createdAt,createdAt};if(fsrsReady)mirrorFsrsToWordflow(x,fsrsLib.createEmptyCard(new Date(createdAt)));state.sentences.push(x)}save();closeSentenceModal()}function deleteSentence(id){if(!canChange())return;if(confirm('이 문장을 삭제할까요?')){state.sentences=state.sentences.filter(x=>x.id!==id);state.sentenceReviews=state.sentenceReviews.filter(r=>r.sentenceId!==id);save()}}
+async function startSentenceReview(){if(!(await waitForInitialReviewReady()))return;sentenceQueue=dueSentences().sort(()=>Math.random()-.5);sentenceCurrentIndex=0;switchView('sentenceReview');renderSentenceReview()}function renderSentenceReview(){const shell=document.getElementById('sentenceReviewShell');if(!sentenceQueue.length||sentenceCurrentIndex>=sentenceQueue.length){shell.innerHTML='<div class="card empty"><strong>문장 복습 완료 🎉</strong></div>';return}const x=sentenceQueue[sentenceCurrentIndex];shell.innerHTML=`<div class="review-meta"><span>한국어 → 영어</span><span>${sentenceCurrentIndex+1} / ${sentenceQueue.length}</span></div><div class="card flashcard"><div class="sentence-prompt">${sentenceMarkup(x.korean)}</div><div class="answer" id="sentenceAnswer"><div class="sentence-answer-list">${(x.answers||[]).map(a=>`<div class="sentence-answer-option">${sentenceMarkup(a)}</div>`).join('')}</div>${x.note?`<div class="sentence-note">${esc(x.note)}</div>`:''}</div></div><button class="btn primary reveal" id="sentenceRevealBtn" onclick="revealSentenceAnswer()">정답 공개 <span class="kbd">Space / Num 0</span></button><div class="review-actions" id="sentenceRatingButtons" style="display:none"><button class="rate" onclick="rateSentence(0)">Again</button><button class="rate" onclick="rateSentence(1)">Hard</button><button class="rate" onclick="rateSentence(2)">Good</button><button class="rate" onclick="rateSentence(3)">Easy</button></div>`}function revealSentenceAnswer(){document.getElementById('sentenceAnswer')?.classList.add('show');document.getElementById('sentenceRevealBtn').style.display='none';document.getElementById('sentenceRatingButtons').style.display='grid'}async function rateSentence(rating){if(!canChange())return;if(!(await ensureFsrsReady()))return;const x=sentenceQueue[sentenceCurrentIndex],live=state.sentences.find(v=>v.id===x?.id);if(!live)return;const now=new Date(),f=hydrateFsrsCard(live)||fsrsLib.createEmptyCard(new Date(live.createdAt||now)),result=fsrsScheduler.next(f,now,fsrsGradeFromWordflow(rating));mirrorFsrsToWordflow(live,result.card);state.sentenceReviews.push({sentenceId:live.id,date:now.toISOString(),rating,interval:live.interval,scheduler:'FSRS-6',stability:live.fsrs.stability,difficulty:live.fsrs.difficulty,lapses:live.fsrs.lapses,state:live.fsrs.state});updateStreak();sentenceCurrentIndex++;save();renderSentenceReview()}
+const WORDFLOW_SQL='';
+function getCloudConfig(){try{return JSON.parse(localStorage.getItem(CLOUD_CONFIG_KEY))||{}}catch{return {}}}function setSyncStatus(kind,text){for(const id of ['syncDot','sideSyncDot']){const e=document.getElementById(id);if(e)e.className=`sync-dot ${kind||'err'}`}for(const id of ['syncStatusText','sideSyncText']){const e=document.getElementById(id);if(e)e.textContent=text}}function updateCloudUI(){document.getElementById('syncAccount').textContent=cloudUser?.email||'';document.getElementById('logoutBtn').style.display=cloudUser?'inline-block':'none';document.getElementById('syncNowBtn').style.display=cloudUser?'inline-block':'none'}function loadCloudConfigUI(){const c=getCloudConfig();document.getElementById('sbUrl').value=c.url||'';document.getElementById('sbKey').value=c.key||''}
+async function initCloud(){loadCloudConfigUI();const c=getCloudConfig();if(!c.url||!c.key){setSyncStatus('err','클라우드 연결 전');return}if(!window.supabase?.createClient){setSyncStatus('err','Supabase 라이브러리 로드 실패');return}try{cloudClient=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});const {data,error}=await cloudClient.auth.getSession();if(error)throw error;cloudUser=data.session?.user||null;updateCloudUI();if(cloudUser)await syncAfterLogin();else setSyncStatus('err','연결됨 · 로그인 필요');cloudClient.auth.onAuthStateChange((_e,s)=>{const prev=cloudUser?.id;cloudUser=s?.user||null;updateCloudUI();if(prev!==cloudUser?.id){serverReady=false;serverBase=null;state=structuredClone(seed);renderAll();if(cloudUser)setTimeout(()=>syncAfterLogin(),0)}})}catch(e){console.error(e);setSyncStatus('err','클라우드 연결 실패')}}async function saveCloudConfig(){const url=document.getElementById('sbUrl').value.trim().replace(/\/$/,''),key=document.getElementById('sbKey').value.trim();if(!url||!key)return;localStorage.setItem(CLOUD_CONFIG_KEY,JSON.stringify({url,key}));cloudClient=null;cloudUser=null;await initCloud()}async function copySetupSQL(){try{await navigator.clipboard.writeText(WORDFLOW_SQL);toast('설정 SQL을 복사했어요.')}catch{}}
+async function cloudSignUp(){if(!cloudClient)return;const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPassword').value;if(!email||password.length<6)return;const {data,error}=await cloudClient.auth.signUp({email,password});if(error){toast(error.message);return}cloudUser=data.session?.user||null;updateCloudUI();if(data.session)await syncAfterLogin();else toast('인증 메일을 확인해주세요.')}async function cloudSignIn(){if(!cloudClient)return;const email=document.getElementById('authEmail').value.trim(),password=document.getElementById('authPassword').value;const {data,error}=await cloudClient.auth.signInWithPassword({email,password});if(error){toast(error.message);return}cloudUser=data.user;updateCloudUI();await syncAfterLogin()}async function cloudSignOut(){if(cloudClient)await cloudClient.auth.signOut();cloudUser=null;serverReady=false;serverBase=null;serverOwner=null;state=structuredClone(seed);queue=[];sentenceQueue=[];renderAll();updateCloudUI();setSyncStatus('err','연결됨 · 로그인 필요')}
+function applyCloudPayload(payload,updatedAt){if(!payload||!Array.isArray(payload.cards))throw new Error('Invalid cloud payload');const wordActive=document.getElementById('review')?.classList.contains('active')&&queue.length>0,sentenceActive=document.getElementById('sentenceReview')?.classList.contains('active')&&sentenceQueue.length>0,wordIds=queue.map(c=>c.id),sentenceIds=sentenceQueue.map(c=>c.id),wordId=queue[currentIndex]?.id,sentenceId=sentenceQueue[sentenceCurrentIndex]?.id,wordRevealed=document.getElementById('ratingButtons')?.style.display!=='none',sentenceRevealed=document.getElementById('sentenceRatingButtons')?.style.display!=='none';const priorWord=JSON.stringify(queue[currentIndex]??null),priorSentence=JSON.stringify(sentenceQueue[sentenceCurrentIndex]??null);state=payload;const migrated=migrateState();state.syncMeta={dirty:false,lastSyncedAt:updatedAt,userId:cloudUser.id};localStorage.setItem(STORAGE_KEY,JSON.stringify(state));if(fsrsReady){migrateCardsToFsrs();migrateSentencesToFsrs()}if(wordActive){const m=new Map(state.cards.map(c=>[c.id,c]));queue=wordIds.map(id=>m.get(id)).filter(Boolean);currentIndex=wordId==null?queue.length:Math.max(0,queue.findIndex(c=>c.id===wordId))}else{queue=[];currentIndex=0}if(sentenceActive){const m=new Map(state.sentences.map(c=>[c.id,c]));sentenceQueue=sentenceIds.map(id=>m.get(id)).filter(Boolean);sentenceCurrentIndex=sentenceId==null?sentenceQueue.length:Math.max(0,sentenceQueue.findIndex(c=>c.id===sentenceId))}else{sentenceQueue=[];sentenceCurrentIndex=0}renderAll();if(wordActive&&priorWord!==JSON.stringify(queue[currentIndex]??null)){renderReview();if(wordRevealed&&queue[currentIndex])revealAnswer()}if(sentenceActive&&priorSentence!==JSON.stringify(sentenceQueue[sentenceCurrentIndex]??null)){renderSentenceReview();if(sentenceRevealed&&sentenceQueue[sentenceCurrentIndex])revealSentenceAnswer()}}
+function exportData(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(state,null,2)],{type:'application/json'}));a.download=`wordflow-backup-${todayKey()}.json`;a.click();URL.revokeObjectURL(a.href)}function importData(e){if(!canChange())return;const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!Array.isArray(d.cards))throw 0;archiveLocal(d,'불러온 JSON');for(const key of ['cards','sentences','learningItems']){const ids=new Set(state[key].map(x=>x.id));for(const x of d[key]||[]){if(x.id&&!ids.has(x.id)){state[key].push(x);ids.add(x.id)}}}save();toast('데이터를 복원했어요.')}catch{toast('올바른 Wordflow JSON이 아니에요.')}};r.readAsText(f);e.target.value=''}function resetData(){toast('전체 초기화는 데이터 보호를 위해 비활성화했어요. 개별 삭제를 사용해주세요.');return;if(confirm('모든 단어·문장과 복습 기록을 삭제할까요?')){state=structuredClone(seed);queue=[];sentenceQueue=[];save()}}
+let preferredEnglishVoice=null,ttsUtterance=null,ttsSpeaking=false,ttsLockUntil=0;function chooseEnglishVoice(){const voices=window.speechSynthesis?.getVoices?.()||[];preferredEnglishVoice=voices.find(v=>/^en-US$/i.test(v.lang))||voices.find(v=>/^en/i.test(v.lang))||null}function primeTTS(){if('speechSynthesis'in window){chooseEnglishVoice();window.speechSynthesis.onvoiceschanged=chooseEnglishVoice}}function speakWord(text){const speechText=String(text||'').replace(/~/g,'').replace(/\s*\/\s*/g,', ').trim();if(!speechText||!('speechSynthesis'in window)||ttsSpeaking||window.speechSynthesis.speaking||window.speechSynthesis.pending||performance.now()<ttsLockUntil)return;const u=new SpeechSynthesisUtterance(speechText);ttsUtterance=u;ttsSpeaking=true;u.lang='en-US';u.rate=.9;if(preferredEnglishVoice)u.voice=preferredEnglishVoice;const finish=()=>{if(ttsUtterance===u)ttsUtterance=null;ttsSpeaking=false;ttsLockUntil=performance.now()+500};u.onend=finish;u.onerror=finish;window.speechSynthesis.speak(u)}primeTTS();
+for(const id of ['sentenceModalBackdrop','deckModalBackdrop','learningModalBackdrop'])document.getElementById(id).addEventListener('click',e=>{if(e.target.id===id)({sentenceModalBackdrop:closeSentenceModal,deckModalBackdrop:closeDeckManager,learningModalBackdrop:closeLearningModal}[id])()});
+document.addEventListener('keydown',e=>{if(document.getElementById('modalBackdrop').classList.contains('show')&&(e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();saveCard();return}if(document.getElementById('sentenceModalBackdrop').classList.contains('show')&&(e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();saveSentence();return}if(document.getElementById('learningModalBackdrop').classList.contains('show')&&(e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();saveLearningItem();return}const ratings={'1':0,'2':1,'3':2,'4':3};if(document.getElementById('sentenceReview').classList.contains('active')){if(e.code==='Space'||e.code==='Numpad0'){e.preventDefault();revealSentenceAnswer()}if(ratings[e.key]!==undefined&&document.getElementById('sentenceRatingButtons')?.style.display!=='none')rateSentence(ratings[e.key]);return}if(!document.getElementById('review').classList.contains('active'))return;if(e.code==='NumpadAdd'){e.preventDefault();if(!e.repeat&&queue[currentIndex]?.word)speakWord(queue[currentIndex].word);return}if(e.code==='Space'||e.code==='Numpad0'){e.preventDefault();revealAnswer()}if(ratings[e.key]!==undefined&&document.getElementById('ratingButtons')?.style.display!=='none')rate(ratings[e.key])});
+let serverBase=null,serverRevision=null,serverReady=false,serverOwner=null;
+function archiveLocal(value,reason){try{const key='wordflow_recovery_v59',items=JSON.parse(localStorage.getItem(key)||'[]');items.push({savedAt:new Date().toISOString(),reason,payload:structuredClone(value)});localStorage.setItem(key,JSON.stringify(items.slice(-20)))}catch(e){console.error(e)}}
+function exportRecovery(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([localStorage.getItem('wordflow_recovery_v59')||'[]'],{type:'application/json'}));a.download='wordflow-recovery.json';a.click();URL.revokeObjectURL(a.href)}
+function diffState(before,after,path=[],ops=[]){
+ if(JSON.stringify(before)===JSON.stringify(after))return ops;
+ if(Array.isArray(before)&&Array.isArray(after)){
+  if(before.every(x=>x&&typeof x==='object'&&typeof x.id==='string')&&after.every(x=>x&&typeof x==='object'&&typeof x.id==='string')){
+   const work=before.slice(),ids=new Set(after.map(x=>x.id));
+   for(let i=work.length-1;i>=0;i--)if(!ids.has(work[i].id)){ops.push({op:'remove',path:[...path,String(i)]});work.splice(i,1)}
+   for(const item of after){const i=work.findIndex(x=>x.id===item.id);if(i<0){ops.push({op:'set',path:[...path,String(work.length)],value:item});work.push(item)}else diffState(work[i],item,[...path,String(i)],ops)}
+   return ops;
+  }
+  const n=Math.min(before.length,after.length);
+  for(let i=0;i<n;i++)diffState(before[i],after[i],[...path,String(i)],ops);
+  for(let i=before.length-1;i>=after.length;i--)ops.push({op:'remove',path:[...path,String(i)]});
+  for(let i=n;i<after.length;i++)ops.push({op:'set',path:[...path,String(i)],value:after[i]});
+ }else if(before&&after&&typeof before==='object'&&typeof after==='object'&&!Array.isArray(before)&&!Array.isArray(after)){
+  for(const k of new Set([...Object.keys(before),...Object.keys(after)])){
+   if(path.length===0&&k==='syncMeta')continue;
+   if(!(k in after))ops.push({op:'remove',path:[...path,k]});
+   else if(!(k in before))ops.push({op:'set',path:[...path,k],value:after[k]});
+   else diffState(before[k],after[k],[...path,k],ops);
+  }
+ }else ops.push({op:'set',path,value:after});
+ return ops;
+}
+function canChange(){if(!serverReady||!cloudUser||!navigator.onLine||cloudBusy){toast(cloudBusy?'서버에 저장 중이에요. 잠시 기다려주세요.':'서버 연결과 로그인을 확인해주세요. 연결 후 수정할 수 있어요.');return false}return true}
+function showSyncMessage(message){document.getElementById('serverSyncMessage').textContent=message}
+function updateBusy(){document.body.classList.toggle('server-saving',cloudBusy)}
+function scheduleCloudPush(){clearTimeout(cloudPushTimer);void pushCloudState()}
+async function fetchCloudRow(){if(!cloudClient||!cloudUser)return{data:null,error:new Error('로그인이 필요해요.')};return cloudClient.from('wordflow_state').select('payload,updated_at,revision').eq('user_id',cloudUser.id).maybeSingle()}
+function adoptServer(data){
+ if(!data||!Array.isArray(data.payload?.cards)||data.revision==null)throw new Error('서버 데이터 형식을 확인할 수 없어요.');
+ if(serverReady&&serverOwner===cloudUser.id&&String(serverRevision)===String(data.revision)){setSyncStatus('ok','서버 최신 데이터');return;}
+ applyCloudPayload(structuredClone(data.payload),data.updated_at);
+ serverBase=structuredClone(state);serverRevision=data.revision;serverOwner=cloudUser.id;serverReady=true;
+ state.syncMeta={dirty:false,lastSyncedAt:data.updated_at,userId:cloudUser.id};
+ localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+ setSyncStatus('ok','서버 최신 데이터');renderAll();
+}
+async function syncAfterLogin(){serverReady=false;serverBase=null;serverRevision=null;await refreshServer()}
+async function refreshServer(){
+ if(cloudBusy||!cloudClient||!cloudUser)return;
+ const owner=cloudUser.id;cloudBusy=true;updateBusy();setSyncStatus('busy','서버 확인 중…');
+ try{const {data,error}=await fetchCloudRow();if(error)throw error;if(cloudUser?.id!==owner)return;if(!data)throw new Error('이 계정에 저장된 단어장이 없어요. 기존 단어장 계정으로 로그인해주세요.');adoptServer(data);showSyncMessage('서버 최신 데이터를 사용 중입니다. 변경한 항목만 저장합니다.');}
+ catch(e){serverReady=false;setSyncStatus('err','서버 확인 실패');showSyncMessage(e.message||String(e));}
+ finally{cloudBusy=false;updateBusy();updateCloudUI()}
+}
+async function pushCloudState(){
+ if(!serverReady||!cloudUser||cloudBusy||serverOwner!==cloudUser.id)return;
+ const owner=cloudUser.id,client=cloudClient,snapshot=structuredClone(state),ops=diffState(serverBase,snapshot);
+ if(!ops.length){state.syncMeta.dirty=false;return}
+ archiveLocal(snapshot,'저장 시도 전 사본');cloudBusy=true;updateBusy();setSyncStatus('busy','서버 저장 중…');
+ try{
+  const {data,error}=await client.rpc('wordflow_patch_v59',{expected_revision:serverRevision,ops});
+  if(error)throw error;if(cloudUser?.id!==owner)return;
+  adoptServer(data);showSyncMessage('변경사항이 서버에 저장되었습니다.');
+ }catch(e){
+  if(cloudUser?.id!==owner)return;
+  serverReady=false;setSyncStatus('err','저장 확인 필요');
+  const conflict=e.code==='40001'||String(e.message).includes('WORDFLOW_CONFLICT');
+  showSyncMessage(conflict?'다른 기기에서 먼저 변경했습니다. 최신 데이터를 불러왔으니 방금 작업을 다시 해주세요. 입력 내용은 복구용 사본에 보관했습니다.':'저장을 확인하지 못했습니다. 입력 내용은 복구용 사본에 보관했습니다. 서버 새로고침 후 내용을 확인해주세요.');
+  if(conflict){queue=[];sentenceQueue=[];const {data,error}=await fetchCloudRow();if(!error&&data){adoptServer(data);switchView('home')}toast('다른 기기의 변경을 보호했어요. 방금 작업을 다시 해주세요.');}
+  else{toast('저장을 확인하지 못했어요. 데이터·동기화 화면을 확인해주세요.');switchView('settings')}
+ }finally{cloudBusy=false;updateBusy();updateCloudUI()}
+}
+async function syncNow(){await refreshServer()}
+async function checkCloudUpdates(){if(!cloudUser||cloudBusy||!navigator.onLine||document.hidden||document.querySelector('#modalBackdrop.show,#sentenceModalBackdrop.show,#learningModalBackdrop.show,#deckModalBackdrop.show'))return;await refreshServer()}
+const mutationNames=/\b(saveCard|deleteCard|saveSentence|deleteSentence|rate|rateSentence|saveLearning\w*|deleteLearning\w*|toggleLearningFavorite|addDeck|saveDeck\w*|deleteDeck\w*|renameDeck\w*|resetData|importData)\s*\(/;
+document.addEventListener('click',e=>{const el=e.target.closest('[onclick]');if(el&&mutationNames.test(el.getAttribute('onclick'))&&!canChange()){e.preventDefault();e.stopImmediatePropagation()}},true);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)void checkCloudUpdates()});
+window.addEventListener('focus',()=>void checkCloudUpdates());
+
+renderAll();fsrsInitPromise=initFsrs();cloudInitPromise=initCloud();setInterval(checkCloudUpdates,10000);window.addEventListener('online',()=>cloudUser?syncNow():updateCloudUI());window.addEventListener('offline',()=>{serverReady=false;setSyncStatus('err','오프라인 · 읽기 전용')});window.addEventListener('resize',scheduleReviewFit);
+</script>
+
+<dialog id="wordflowRulesDialog" aria-labelledby="wordflowRulesTitle">
+<div class="rules-header"><h2 id="wordflowRulesTitle">Wordflow 규칙</h2><button class="btn" onclick="document.getElementById('wordflowRulesDialog').close()" autofocus>닫기</button></div>
+<div class="rules-content"><p id="wordflowRulesVersion" style="color:var(--muted)"></p>
+<h3>단어와 예문</h3><ul><li>추가를 요청한 단어·표현만 등록하고, 중복은 확인합니다.</li><li>발음기호, 한국어 뜻, 영어 예문 5개와 각각의 한국어 해석을 넣습니다.</li><li><strong>원어민이 실생활에서 흔히 쓰는 상황·말투·단어 조합을 최대한 살려 예문 5개를 만듭니다.</strong> 딱딱한 교과서식 문장이나 억지 상황은 피하고, 격식 있는 단어는 실제 쓰이는 격식에 맞춥니다.</li><li>메모에는 핵심 뉘앙스, 자주 쓰는 표현, 주의점과 비슷한 표현의 차이를 설명합니다.</li></ul>
+<h3>이미지</h3><ul><li>단어의 뜻이 직관적으로 떠오르는 외부 이미지 주소를 사용합니다. 생성 이미지는 쓰지 않습니다.</li><li>기본 1장, 뚜렷하게 다른 뜻을 함께 배우면 2장, 필요한 경우 최대 3장을 사용합니다.</li><li>이미지 아래에는 한국어 장면 설명을 표시하고, 복습 중에는 정답 공개 후 보여줍니다.</li></ul>
+<h3>복습과 데이터 보호</h3><ul><li>단어 내용 수정 시 기존 복습 기록과 다음 복습 일정은 보존합니다.</li><li>로그인 후 서버의 최신 데이터를 불러오고 변경한 항목만 저장합니다. 오래된 기기 데이터의 전체 덮어쓰기를 막습니다.</li><li>복습 결과는 그때그때 저장하되, 일반 저장 알림은 띄우지 않습니다. 실패·충돌은 알립니다.</li><li>JSON 내보내기는 현재 불러온 단어·문장·복습 기록과 진도를 포함합니다. ‘없는 카드 추가’는 전체 복습 기록 복원 기능이 아닙니다.</li></ul>
+<h3>유지보수</h3><p>내용 변경 후에는 실제 저장 결과를 확인합니다. 앱 기능 변경 시 버전과 패치노트를 함께 갱신합니다. 규칙을 수정할 때 이 요약도 함께 맞춥니다.</p>
+<details><summary>전체 인수인계 원문 보기</summary><pre id="wordflowHandoffText"></pre></details>
+<details><summary>WORDFLOW_RULES 전체 보기</summary><pre id="wordflowRulesJson"></pre></details>
+<details><summary>버전별 패치노트 보기</summary><pre id="wordflowPatchText"></pre></details>
+</div></dialog>
+<script>
+function openWordflowRules(){
+ const dialog=document.getElementById('wordflowRulesDialog');
+ const walker=document.createTreeWalker(document,NodeFilter.SHOW_COMMENT);
+ let handoff='';
+ while(walker.nextNode()){if(walker.currentNode.data.includes('WORDFLOW — COMPLETE AI HANDOFF')){handoff=walker.currentNode.data.trim();break;}}
+ document.getElementById('wordflowRulesVersion').textContent=`앱 ${APP_VERSION} · 규칙 ${WORDFLOW_RULES.rulesVersion} · 읽기 전용`;
+ document.getElementById('wordflowHandoffText').textContent=handoff||'인수인계 원문을 찾지 못했습니다.';
+ document.getElementById('wordflowRulesJson').textContent=JSON.stringify(WORDFLOW_RULES,null,2);
+ document.getElementById('wordflowPatchText').textContent=Object.entries(WORDFLOW_PATCH_NOTES).map(([version,note])=>`${version}
+${note}`).join('\n\n');
+ dialog.showModal();dialog.scrollTop=0;
+}
+document.addEventListener('keydown',e=>{if(document.getElementById('wordflowRulesDialog').open)e.stopImmediatePropagation();},true);
+</script></body></html>
