@@ -2,8 +2,8 @@
 <!--
 ================================================================================
 WORDFLOW — COMPLETE AI HANDOFF / MAINTENANCE SPEC
-Spec version: 2026-11-02.1
-App version carrying this spec: v72
+Spec version: 2026-11-02.2
+App version carrying this spec: v73
 
 PURPOSE
 This single HTML file is both the application and the canonical maintenance handoff.
@@ -260,6 +260,16 @@ K.1 Responsive PC/mobile behavior.
 K.2 Sync status belongs above the Home button in the desktop sidebar, as well as
     in the Data screen; no noisy Home warning banner. Sidebar branding shows only
     the Wordflow name beneath/alongside its icon, without the old English tagline.
+K.27 v73 REVIEW SCREEN DENSITY — MANDATORY: On DESKTOP after answer reveal
+     top-align content inside the scrollable flashcard instead of centering
+     it with a large blank region above the images. Enlarge gallery images
+     without crop (object-fit:contain), increase examples, Korean translations,
+     explanation and note readability while keeping core nuance +1pt emphasis.
+     Use viewport-aware dynamic room estimation to allocate residual vertical
+     space to images and reduce dead space at the bottom. Do not forcibly
+     stretch or crop photos, hide long text, disable internal scrolling, or
+     alter MOBILE review behavior. Keep images hidden before revealing answers
+     and do not modify any vocabulary, Supabase or FSRS data.
 K.26 v72 NOTE STYLING: For vocabulary note displays only, bold and make +1pt
      the WHOLE "핵심 뉘앙스:" (or legacy "핵심:") paragraph. Detect it at the
      beginning of a blank-line-delimited paragraph. Escape all source text
@@ -339,6 +349,11 @@ K.13 v57: vocabulary review images are hidden before answer reveal and appear on
     reveals the answer; detail-modal images remain visible normally.
 
 L. KNOWN VERSION HISTORY — DO NOT INVENT MISSING HISTORY
+- v73: Rework revealed desktop review layout: top align content to remove
+       large blank strip above image, enlarge images without cropping,
+       scale examples/translations/meaning/memo, dynamically use spare room
+       for taller images, preserve internal scroll and compact/mobile behavior.
+       No DB writes, FSRS, sync, or image-content changes.
 - v72: Highlight vocabulary core nuance paragraphs (label and explanation)
        bold and +1pt in memo detail/review; render-only, existing notes too.
        Standardize the label in future notes; no server/FSRS changes.
@@ -685,6 +700,106 @@ body.server-saving .view:not(#settings){pointer-events:none}
 #cards .due-controls{flex-wrap:wrap}
 }
 .note-key-nuance{font-weight:800;font-size:calc(1em + 1pt)}
+
+/* v73: dense yet readable desktop vocabulary review AFTER answer reveal.
+   Top-align the content; fill spare viewport height through measured gallery growth,
+   never stretch or crop source imagery and never suppress the internal scrollbar. */
+@media(min-width:901px){
+ #review .review-shell.answer-revealed .flashcard{
+  justify-content:flex-start;align-items:stretch;
+  padding:clamp(13px,1.45vh,21px) clamp(16px,1.8vw,28px);
+ }
+ #review .review-shell.answer-revealed .flashcard>*{flex-shrink:0}
+ #review .review-shell.answer-revealed .word-line{justify-content:center}
+ #review .review-shell.answer-revealed .flashcard .pronunciation{text-align:center}
+ #review .review-shell.answer-revealed .review-image-gallery{
+  width:100%;margin:0 auto clamp(10px,1.25vh,17px);
+  max-width:760px;gap:10px;
+ }
+ #review .review-shell.answer-revealed .review-image-gallery.single{max-width:760px}
+ #review .review-shell.answer-revealed .review-image-gallery.single .word-image-tile img{
+  height:calc(clamp(210px,23vh,295px) + var(--review-fill-image-extra,0px));
+  max-height:none;object-fit:contain;
+ }
+ #review .review-shell.answer-revealed .review-image-gallery:not(.single) .word-image-tile img{
+  height:calc(clamp(160px,19vh,225px) + var(--review-fill-image-extra,0px));
+  object-fit:contain;
+ }
+ #review .review-shell.answer-revealed .word-image-caption{
+  font-size:12px;line-height:1.4;padding:8px 10px;
+ }
+ #review .review-shell.answer-revealed .flashcard .word{
+  font-size:clamp(36px,3.8vh,49px);
+ }
+ #review .review-shell.answer-revealed .context{
+  margin:clamp(8px,1vh,14px) auto 0;
+  font-size:clamp(15px,1.5vh,18px);
+  line-height:1.5;gap:clamp(5px,.75vh,10px);
+  max-width:760px;text-align:center;
+ }
+ #review .review-shell.answer-revealed .example-block{gap:4px}
+ #review .review-shell.answer-revealed .example-translation{
+  font-size:clamp(13px,1.3vh,16px);line-height:1.4;
+ }
+ #review .review-shell.answer-revealed .answer{
+  text-align:center;margin-top:clamp(10px,1.2vh,17px);
+  padding-top:clamp(10px,1.2vh,17px);
+ }
+ #review .review-shell.answer-revealed .answer .meaning{
+  font-size:clamp(23px,2.4vh,30px);line-height:1.35;
+ }
+ #review .review-shell.answer-revealed .answer .note{
+  font-size:clamp(14px,1.4vh,17px);
+  line-height:1.53;margin-top:clamp(9px,1vh,14px);
+ }
+}
+@media(min-width:901px) and (min-height:821px){
+ #review .review-shell.answer-revealed.fit-roomy .review-image-gallery.single .word-image-tile img{
+  height:calc(clamp(250px,27vh,340px) + var(--review-fill-image-extra,0px));
+  max-height:none;
+ }
+ #review .review-shell.answer-revealed.fit-spacious .review-image-gallery.single .word-image-tile img{
+  height:calc(clamp(285px,31vh,390px) + var(--review-fill-image-extra,0px));
+  max-height:none;
+ }
+ #review .review-shell.answer-revealed.fit-roomy .review-image-gallery:not(.single) .word-image-tile img{
+  height:calc(clamp(180px,22vh,260px) + var(--review-fill-image-extra,0px));
+ }
+ #review .review-shell.answer-revealed.fit-spacious .review-image-gallery:not(.single) .word-image-tile img{
+  height:calc(clamp(210px,25vh,295px) + var(--review-fill-image-extra,0px));
+ }
+ #review .review-shell.answer-revealed.fit-roomy .context,
+ #review .review-shell.answer-revealed.fit-spacious .context{
+  font-size:clamp(16px,1.6vh,19px);line-height:1.52;gap:8px;
+ }
+ #review .review-shell.answer-revealed.fit-roomy .example-translation,
+ #review .review-shell.answer-revealed.fit-spacious .example-translation{
+  font-size:clamp(14px,1.4vh,16px);
+ }
+ #review .review-shell.answer-revealed.fit-roomy .answer .note,
+ #review .review-shell.answer-revealed.fit-spacious .answer .note{
+  font-size:clamp(15px,1.48vh,18px);line-height:1.54;
+ }
+ #review .review-shell.answer-revealed.fit-roomy .answer .meaning,
+ #review .review-shell.answer-revealed.fit-spacious .answer .meaning{
+  font-size:clamp(25px,2.65vh,31px);
+ }
+}
+@media(min-width:901px) and (max-height:820px){
+ /* Compact desktop retains enough room for controls and scrolling. */
+ #review .review-shell.answer-revealed .review-image-gallery.single .word-image-tile img{
+  height:calc(clamp(125px,20vh,175px) + var(--review-fill-image-extra,0px));
+ }
+ #review .review-shell.answer-revealed .review-image-gallery:not(.single) .word-image-tile img{
+  height:calc(clamp(100px,17vh,140px) + var(--review-fill-image-extra,0px));
+ }
+ #review .review-shell.answer-revealed .context{
+  font-size:clamp(12.5px,1.65vh,14px);line-height:1.35;gap:3px;
+ }
+ #review .review-shell.answer-revealed .example-translation{font-size:12px;line-height:1.3}
+ #review .review-shell.answer-revealed .answer .meaning{font-size:19px}
+ #review .review-shell.answer-revealed .answer .note{font-size:12px;line-height:1.33}
+}
 </style>
 </head>
 <body>
@@ -712,9 +827,9 @@ body.server-saving .view:not(#settings){pointer-events:none}
 <script>
 const STORAGE_KEY='wordflow_v1', CLOUD_CONFIG_KEY='wordflow_supabase_config_v1', FSRS_PACKAGE_URL='https://cdn.jsdelivr.net/npm/ts-fsrs@5.4.1/+esm';
 const FSRS_CONFIG=Object.freeze({request_retention:.90,maximum_interval:36500,enable_fuzz:true,enable_short_term:true,learning_steps:['1m','10m'],relearning_steps:['10m']});
-const APP_VERSION='v72',APP_BUILD_DATE='2026-11-02';
-const WORDFLOW_RULES=Object.freeze({rulesVersion:'2026-11-02.1',architecture:{singleFileHtml:true,timeCapsuleExportFormat:'wordflow-timecapsule-v1',timeCapsuleIncludesOriginalSource:true,timeCapsuleRequiresLiveServer:true,timeCapsuleHasSha256Verifier:true,timeCapsuleIsReadOnly:true,timeCapsuleFullRestoreImplemented:false,backupUiPrimaryOnly:true,backupAdvancedCollapsedByDefault:true,storageKey:STORAGE_KEY,cloudConfigKey:CLOUD_CONFIG_KEY,cloudTable:'public.wordflow_state',wholePayloadSync:false,serverAuthoritative:true,syncDimsScreen:false,sidebarSyncAboveHome:true,brandSubtitleVisible:false,saveSuccessToast:false,saveProgressToast:false,saveFailureAndConflictNotices:true,unchangedRevisionSkipsRender:true,unchangedReviewCardPreservesDom:true,patchRpc:"wordflow_patch_v59",optimisticConcurrency:true,legacyClientWritesBlocked:true,recoveryStorage:'IndexedDB',recoveryLimit:20,legacyRecoveryMigrationVerified:true,localCacheIsOptional:true},explicitAddOnly:true,versionPolicy:'data/content changes normally do not bump app; code/UI/schema/behavior changes do',preserveUnknownJsonFields:true,vocabulary:{defaultForm:'lemma unless explicit inflection requested',ipa:'default for normal words/short expressions',examples:{defaultCount:5,style:'native everyday conversational usage',priority:'frequent real-life situations and natural collocations',avoid:'stiff textbook wording, contrived scenarios, forced rare senses',respectActualRegister:true,naturalContractionsQuestionsAndReplies:true,naturalKoreanTranslations:true,englishSeparator:'real blank line',koreanAlignment:'one translation per example',literalBackslashNForbidden:true},preserveOnEdit:['id','due','fsrs','reps','interval','lapses','createdAt','review history','unknown fields','images'],deck:'English',noteFormatting:{preferredHeading:'핵심 뉘앙스:',legacyHeading:'핵심:',boldWholeParagraph:true,increment:'1pt',readOnlyRender:true,scopes:['review','memo detail'],escapesHtml:true}},images:{topPriority:'native-speaker first mental image for target taught sense',sourceLookupPolicy:'DEFAULT use a suitable existing internet image with a stable URL (e.g. Wikimedia Commons or Pexels). Do not autonomously generate for abstract expressions. Avoid Naver Dictionary/Open Dictionary PRO.',defaultAddCount:1,multipleImagesOnlyWhenExplicitlyRequested:false,polysemyDefaultCount:2,multipleImagesPolicy:'Use 2 for clearly distinct taught senses; use 3 only on explicit request or when 3 clearly separate taught senses need coverage',externalImageUrlsOnly:false,storedImagesRequireStableHttpsUrl:true,generatedImagesAllowed:true,generateWhenExplicitlyRequested:true,agentMayGenerateWhenPedagogicallyUseful:false,defaultUseExistingWebImages:true,generateOnlyOnSeparateExplicitUserRequest:true,priorGeneratedOriginalMayBeReusedWhenRequested:true,especiallyUsefulFor:'only contexts explicitly requested by user',noExtraConfirmationForClearImageTask:false,avoidUnnecessaryGeneration:true,generatedImageHostingRequiredBeforeDbWrite:true,temporaryGeneratedUrlsForbidden:true,generatedSourceLabel:'AI-generated (OpenAI)',honestFailureIfHostingUnavailable:true,defaultGenerationCountPerSense:1,useExactOriginalGeneratedAsset:true,neverSilentlyGenerateFallback:true,neverSubstituteManualSvgForGeneratedOutput:true,doNotGenerateExtraJustForHosting:true,secondGenerationOnlyWhenUserRequestsOrFirstUnsuitable:true,planningIncludesDurableHostingBeforeGeneration:true,preferMinimalTextInsideGeneratedImage:true,textInsideGeneratedImageNeverCategoricallyForbidden:true,textInsideGeneratedImageOnlyWhenNaturallyPresentOrGenuinelyHelpfulOrRequested:true,avoidForcedCaptionsAndSpeechBubbles:true,keepKoreanSenseCaptionOutsideImage:true,verifyDisplayedAndStoredAssetMatch:true,routineImageChangesDbOnly:true,routineImageMigrationsAllowed:false,imageChangesBumpAppVersion:false,anatomyPolicy:'Prefer identifiable real contextual photos, with visual markers when useful',legacyFields:['imageUrl','imageSource','imageSourceUrl','imageSense'],multiField:'images',multiShape:{url:'http/https image',source:'legacy metadata; not displayed',sourceUrl:'legacy metadata; not displayed',sense:'short Korean scene-intent caption displayed under image'},maxRendered:3,legacyPrimaryFallback:true,dedupeByUrl:true,mergeDuplicateMetadata:true,showSourceInUi:false,showSceneIntentCaption:true,visibleBeforeReveal:false,captionVisibleBeforeReveal:false,editorImageSlots:3,editorMirrorsFirstSlotToLegacy:true},dbWrites:{workflow:['discover Supabase tools if needed','live read and case-insensitive duplicate check','narrow JSONB write','re-query and verify','report verified result'],preserveWholePayloadAndUnknownFields:true,preserveSchedulingAndReviewHistory:true,verifyFields:['target content','card count','real line breaks','image metadata','due','reps','fsrs'],clearMutationRequestsNeedReconfirmation:false,doNotClaimUnavailableBeforeActualToolAttempt:true,reportActualToolErrors:true},review:{scheduler:'ts-fsrs@5.4.1 / FSRS 6',retention:.9,learningSteps:['1m','10m'],relearningSteps:['10m'],preserveV24InitialReadyWait:true},tts:{stableBaseline:'v28',postSpeechLockMs:500,noCancelRetryQueue:true},uiSync:{responsive:true,desktopReviewViewportFit:true,desktopReviewRevealFit:true,desktopReviewAdaptiveFill:true,mobileReviewLayoutPreserved:true,recentlyAddedCards:{pinMinutes:30,redDot:true},finishedHtmlDirectlyOnPatchRequest:true,editModalBackdropDismiss:false}});
-const WORDFLOW_PATCH_NOTES=Object.freeze({v72:'Core nuance vocabulary note paragraph is bold and +1pt in memo detail and review. Applies to existing 핵심 뉘앙스 and 핵심 sections; future notes use 핵심 뉘앙스. HTML-escaped display only, no FSRS/sync/data changes.',v71:'Backup UI simplification: prominent Wordflow 전체 백업 button; put capsule verifier, legacy JSON export, missing-card import and Wordflow rules under native collapsed 고급 기능. Backup/FSRS/sync logic unchanged.',v70:'Add an independent Time Capsule JSON export: live server payload, original deployed HTML, AI handoff, rules, patch notes, recovery guide and SHA-256 verification. Include a read-only file checker, keep legacy lightweight JSON export, and do not introduce an automatic whole-data restore or change FSRS/sync.',v69:'Move desktop sidebar server status to immediately before Home; remove the old English tagline under Wordflow. No sync, server, data or mobile behavior changes.',v68:'Default to web-sourced vocabulary images for all new image tasks; prohibit unsolicited AI image generation even for abstract phrases. Only generate when the user separately asks, and reuse existing generated originals without regenerating.',v67:'Fix browser storage quota causing false server failures. Keep full recovery snapshots in IndexedDB (rolling 20), copy existing localStorage snapshots before removing them, stop adding a snapshot on every page load, and treat full local cache as nonfatal while cloud data stays authoritative.',v66:'Image policy update: generate a single image and save that identical original rather than creating an additional SVG or alternate rendering. Prefer few/no words inside generated images, while permitting genuinely useful scene text. Align embedded handoff and Korean rules viewer. No app behavior change.',v65:'Update image authoring policy in embedded handoff, WORDFLOW_RULES and Korean rules viewer: allow user-requested or agent-chosen AI-generated images when teaching benefit warrants it, while requiring durable hosted URLs, accurate metadata and narrow verified DB-only image changes. No generation UI or sync/FSRS behavior change.',v64:'Polish vocabulary list: fixed control widths, horizontal example/note buttons, consistent counts/actions, compact toolbar and responsive mobile cards.',v63:'Fix sentence list: reserve widths for answer, note, review count and actions; keep headings/buttons horizontal; use stacked mobile rows.',v62:'Add read-only Wordflow rules dialog in Data settings: Korean summary, canonical handoff, structured rules and patch notes.',rules20260927:'Require 5 realistic everyday native-usage examples with common contexts, natural collocations and conversational phrasing; preserve actual register. Handoff/rules update only.',v61:'Remove routine save success/progress toasts; retain immediate server writes, passive sync status, failure and conflict notices.',v60:'Remove sync-time dimming and redundant review rendering; preserve unchanged review DOM and completed queue position; retain immediate saves, notifications and conflict protection.',v19:'Unified vocabulary deck to English while preserving FSRS.',v24:'Fixed initial review race by waiting for FSRS/cloud init.',v28:'Stable TTS playback lock; no cancel/retry queue; 500ms post-speech lock.',v32:'Reverted vocabulary red highlights; sentence red highlights retained.',v33:'Added image-first learning tab, no FSRS.',v36:'Vocabulary URL image fields and pre-reveal image hints.',v40:'Long edit modal scroll fix.',v41:'UI version derives from APP_VERSION.',v42:'Full image preview in editor.',v43:'Recently-added vocab pinned 30m.',v44:'Recent card red dot.',v45:'Render up to 3 related images from images[] with legacy primary fallback/dedupe; desktop gallery/mobile swipe; editor preserves images[].',v46:"One-time targeted migration refreshes the provocative card's related images with clearer examples and sense labels; migrated cloud payloads are marked dirty for re-sync.",v47:'Image UI now hides source/source links and shows only short scene-intent captions; review captions reveal with the answer; duplicate legacy/images URLs merge caption metadata; editor source fields removed.',v48:'Desktop vocabulary review now auto-compacts to viewport height: smaller adaptive image/padding/type/spacing on PC while mobile layout stays unchanged.',v49:'Vocabulary review removes the desktop review heading/subtitle to reclaim vertical space; revealed answers compact further and the flashcard becomes viewport-bounded with internal overflow so long meanings/notes never spill below the screen.',v50:'Desktop vocabulary review measures actual card content and uses spare vertical room to enlarge images, word text, examples and revealed answer text; long cards fall back to the compact viewport-safe layout.',v51:'Vocabulary editor exposes three image URL + scene-caption slots; slot 1 mirrors to legacy primary fields; default image authoring count is one unless the user explicitly requests multiple images.',v52:'Vocabulary add/edit modal ignores clicks on the dimmed backdrop so accidental outside clicks cannot discard in-progress edits; exit remains explicit via Cancel or Save.',v53:'Image authoring now defaults to 1 image, but clearly split polysemous words default to 2 intuitive images; added a targeted calf migration replacing the sketch-like leg image with an obvious real calf photo and adding a calf-animal photo.',v54:'Mandatory Wordflow DB-write completion gate: explicit data mutations must proceed through Supabase discovery, live read, narrow write, and re-query verification before any final response.',v55:'Temporary augment-image migration build, superseded by v56.',v56:'Handoff hardening: external URL images only, never generated; routine image data changes never bump HTML or use migrations; clear DB mutations execute without re-confirmation; anatomy/body-part images prioritize identifiable real photos and visual markers.',v57:'Vocabulary review images are hidden before answer reveal and become visible only after reveal; detail-modal images remain unchanged.',v59:'Server-first sync with version-checked JSON patches, blocked legacy writes, private server history, foreground refresh and recovery-only local drafts.',v58:'Align WORDFLOW_RULES with current handoff: post-reveal images, distinct-sense image counts, external URL and DB-only image workflow, and verified narrow DB writes. Runtime behavior unchanged.'});
+const APP_VERSION='v73',APP_BUILD_DATE='2026-11-02';
+const WORDFLOW_RULES=Object.freeze({rulesVersion:'2026-11-02.2',architecture:{singleFileHtml:true,timeCapsuleExportFormat:'wordflow-timecapsule-v1',timeCapsuleIncludesOriginalSource:true,timeCapsuleRequiresLiveServer:true,timeCapsuleHasSha256Verifier:true,timeCapsuleIsReadOnly:true,timeCapsuleFullRestoreImplemented:false,backupUiPrimaryOnly:true,backupAdvancedCollapsedByDefault:true,desktopRevealedReviewTopAligned:true,desktopReviewUsesSpareHeight:true,reviewImagesKeepAspectRatio:true,reviewLongContentScrollable:true,storageKey:STORAGE_KEY,cloudConfigKey:CLOUD_CONFIG_KEY,cloudTable:'public.wordflow_state',wholePayloadSync:false,serverAuthoritative:true,syncDimsScreen:false,sidebarSyncAboveHome:true,brandSubtitleVisible:false,saveSuccessToast:false,saveProgressToast:false,saveFailureAndConflictNotices:true,unchangedRevisionSkipsRender:true,unchangedReviewCardPreservesDom:true,patchRpc:"wordflow_patch_v59",optimisticConcurrency:true,legacyClientWritesBlocked:true,recoveryStorage:'IndexedDB',recoveryLimit:20,legacyRecoveryMigrationVerified:true,localCacheIsOptional:true},explicitAddOnly:true,versionPolicy:'data/content changes normally do not bump app; code/UI/schema/behavior changes do',preserveUnknownJsonFields:true,vocabulary:{defaultForm:'lemma unless explicit inflection requested',ipa:'default for normal words/short expressions',examples:{defaultCount:5,style:'native everyday conversational usage',priority:'frequent real-life situations and natural collocations',avoid:'stiff textbook wording, contrived scenarios, forced rare senses',respectActualRegister:true,naturalContractionsQuestionsAndReplies:true,naturalKoreanTranslations:true,englishSeparator:'real blank line',koreanAlignment:'one translation per example',literalBackslashNForbidden:true},preserveOnEdit:['id','due','fsrs','reps','interval','lapses','createdAt','review history','unknown fields','images'],deck:'English',noteFormatting:{preferredHeading:'핵심 뉘앙스:',legacyHeading:'핵심:',boldWholeParagraph:true,increment:'1pt',readOnlyRender:true,scopes:['review','memo detail'],escapesHtml:true}},images:{topPriority:'native-speaker first mental image for target taught sense',sourceLookupPolicy:'DEFAULT use a suitable existing internet image with a stable URL (e.g. Wikimedia Commons or Pexels). Do not autonomously generate for abstract expressions. Avoid Naver Dictionary/Open Dictionary PRO.',defaultAddCount:1,multipleImagesOnlyWhenExplicitlyRequested:false,polysemyDefaultCount:2,multipleImagesPolicy:'Use 2 for clearly distinct taught senses; use 3 only on explicit request or when 3 clearly separate taught senses need coverage',externalImageUrlsOnly:false,storedImagesRequireStableHttpsUrl:true,generatedImagesAllowed:true,generateWhenExplicitlyRequested:true,agentMayGenerateWhenPedagogicallyUseful:false,defaultUseExistingWebImages:true,generateOnlyOnSeparateExplicitUserRequest:true,priorGeneratedOriginalMayBeReusedWhenRequested:true,especiallyUsefulFor:'only contexts explicitly requested by user',noExtraConfirmationForClearImageTask:false,avoidUnnecessaryGeneration:true,generatedImageHostingRequiredBeforeDbWrite:true,temporaryGeneratedUrlsForbidden:true,generatedSourceLabel:'AI-generated (OpenAI)',honestFailureIfHostingUnavailable:true,defaultGenerationCountPerSense:1,useExactOriginalGeneratedAsset:true,neverSilentlyGenerateFallback:true,neverSubstituteManualSvgForGeneratedOutput:true,doNotGenerateExtraJustForHosting:true,secondGenerationOnlyWhenUserRequestsOrFirstUnsuitable:true,planningIncludesDurableHostingBeforeGeneration:true,preferMinimalTextInsideGeneratedImage:true,textInsideGeneratedImageNeverCategoricallyForbidden:true,textInsideGeneratedImageOnlyWhenNaturallyPresentOrGenuinelyHelpfulOrRequested:true,avoidForcedCaptionsAndSpeechBubbles:true,keepKoreanSenseCaptionOutsideImage:true,verifyDisplayedAndStoredAssetMatch:true,routineImageChangesDbOnly:true,routineImageMigrationsAllowed:false,imageChangesBumpAppVersion:false,anatomyPolicy:'Prefer identifiable real contextual photos, with visual markers when useful',legacyFields:['imageUrl','imageSource','imageSourceUrl','imageSense'],multiField:'images',multiShape:{url:'http/https image',source:'legacy metadata; not displayed',sourceUrl:'legacy metadata; not displayed',sense:'short Korean scene-intent caption displayed under image'},maxRendered:3,legacyPrimaryFallback:true,dedupeByUrl:true,mergeDuplicateMetadata:true,showSourceInUi:false,showSceneIntentCaption:true,visibleBeforeReveal:false,captionVisibleBeforeReveal:false,editorImageSlots:3,editorMirrorsFirstSlotToLegacy:true},dbWrites:{workflow:['discover Supabase tools if needed','live read and case-insensitive duplicate check','narrow JSONB write','re-query and verify','report verified result'],preserveWholePayloadAndUnknownFields:true,preserveSchedulingAndReviewHistory:true,verifyFields:['target content','card count','real line breaks','image metadata','due','reps','fsrs'],clearMutationRequestsNeedReconfirmation:false,doNotClaimUnavailableBeforeActualToolAttempt:true,reportActualToolErrors:true},review:{scheduler:'ts-fsrs@5.4.1 / FSRS 6',retention:.9,learningSteps:['1m','10m'],relearningSteps:['10m'],preserveV24InitialReadyWait:true},tts:{stableBaseline:'v28',postSpeechLockMs:500,noCancelRetryQueue:true},uiSync:{responsive:true,desktopReviewViewportFit:true,desktopReviewRevealFit:true,desktopReviewAdaptiveFill:true,mobileReviewLayoutPreserved:true,recentlyAddedCards:{pinMinutes:30,redDot:true},finishedHtmlDirectlyOnPatchRequest:true,editModalBackdropDismiss:false}});
+const WORDFLOW_PATCH_NOTES=Object.freeze({v73:'Desktop revealed-review layout top aligns images and text, enlarges photos and typography, and allocates spare vertical space to photos. Keep image aspect ratio, prevent clipping of long notes via internal scrolling, leave mobile, FSRS and sync unchanged.',v72:'Core nuance vocabulary note paragraph is bold and +1pt in memo detail and review. Applies to existing 핵심 뉘앙스 and 핵심 sections; future notes use 핵심 뉘앙스. HTML-escaped display only, no FSRS/sync/data changes.',v71:'Backup UI simplification: prominent Wordflow 전체 백업 button; put capsule verifier, legacy JSON export, missing-card import and Wordflow rules under native collapsed 고급 기능. Backup/FSRS/sync logic unchanged.',v70:'Add an independent Time Capsule JSON export: live server payload, original deployed HTML, AI handoff, rules, patch notes, recovery guide and SHA-256 verification. Include a read-only file checker, keep legacy lightweight JSON export, and do not introduce an automatic whole-data restore or change FSRS/sync.',v69:'Move desktop sidebar server status to immediately before Home; remove the old English tagline under Wordflow. No sync, server, data or mobile behavior changes.',v68:'Default to web-sourced vocabulary images for all new image tasks; prohibit unsolicited AI image generation even for abstract phrases. Only generate when the user separately asks, and reuse existing generated originals without regenerating.',v67:'Fix browser storage quota causing false server failures. Keep full recovery snapshots in IndexedDB (rolling 20), copy existing localStorage snapshots before removing them, stop adding a snapshot on every page load, and treat full local cache as nonfatal while cloud data stays authoritative.',v66:'Image policy update: generate a single image and save that identical original rather than creating an additional SVG or alternate rendering. Prefer few/no words inside generated images, while permitting genuinely useful scene text. Align embedded handoff and Korean rules viewer. No app behavior change.',v65:'Update image authoring policy in embedded handoff, WORDFLOW_RULES and Korean rules viewer: allow user-requested or agent-chosen AI-generated images when teaching benefit warrants it, while requiring durable hosted URLs, accurate metadata and narrow verified DB-only image changes. No generation UI or sync/FSRS behavior change.',v64:'Polish vocabulary list: fixed control widths, horizontal example/note buttons, consistent counts/actions, compact toolbar and responsive mobile cards.',v63:'Fix sentence list: reserve widths for answer, note, review count and actions; keep headings/buttons horizontal; use stacked mobile rows.',v62:'Add read-only Wordflow rules dialog in Data settings: Korean summary, canonical handoff, structured rules and patch notes.',rules20260927:'Require 5 realistic everyday native-usage examples with common contexts, natural collocations and conversational phrasing; preserve actual register. Handoff/rules update only.',v61:'Remove routine save success/progress toasts; retain immediate server writes, passive sync status, failure and conflict notices.',v60:'Remove sync-time dimming and redundant review rendering; preserve unchanged review DOM and completed queue position; retain immediate saves, notifications and conflict protection.',v19:'Unified vocabulary deck to English while preserving FSRS.',v24:'Fixed initial review race by waiting for FSRS/cloud init.',v28:'Stable TTS playback lock; no cancel/retry queue; 500ms post-speech lock.',v32:'Reverted vocabulary red highlights; sentence red highlights retained.',v33:'Added image-first learning tab, no FSRS.',v36:'Vocabulary URL image fields and pre-reveal image hints.',v40:'Long edit modal scroll fix.',v41:'UI version derives from APP_VERSION.',v42:'Full image preview in editor.',v43:'Recently-added vocab pinned 30m.',v44:'Recent card red dot.',v45:'Render up to 3 related images from images[] with legacy primary fallback/dedupe; desktop gallery/mobile swipe; editor preserves images[].',v46:"One-time targeted migration refreshes the provocative card's related images with clearer examples and sense labels; migrated cloud payloads are marked dirty for re-sync.",v47:'Image UI now hides source/source links and shows only short scene-intent captions; review captions reveal with the answer; duplicate legacy/images URLs merge caption metadata; editor source fields removed.',v48:'Desktop vocabulary review now auto-compacts to viewport height: smaller adaptive image/padding/type/spacing on PC while mobile layout stays unchanged.',v49:'Vocabulary review removes the desktop review heading/subtitle to reclaim vertical space; revealed answers compact further and the flashcard becomes viewport-bounded with internal overflow so long meanings/notes never spill below the screen.',v50:'Desktop vocabulary review measures actual card content and uses spare vertical room to enlarge images, word text, examples and revealed answer text; long cards fall back to the compact viewport-safe layout.',v51:'Vocabulary editor exposes three image URL + scene-caption slots; slot 1 mirrors to legacy primary fields; default image authoring count is one unless the user explicitly requests multiple images.',v52:'Vocabulary add/edit modal ignores clicks on the dimmed backdrop so accidental outside clicks cannot discard in-progress edits; exit remains explicit via Cancel or Save.',v53:'Image authoring now defaults to 1 image, but clearly split polysemous words default to 2 intuitive images; added a targeted calf migration replacing the sketch-like leg image with an obvious real calf photo and adding a calf-animal photo.',v54:'Mandatory Wordflow DB-write completion gate: explicit data mutations must proceed through Supabase discovery, live read, narrow write, and re-query verification before any final response.',v55:'Temporary augment-image migration build, superseded by v56.',v56:'Handoff hardening: external URL images only, never generated; routine image data changes never bump HTML or use migrations; clear DB mutations execute without re-confirmation; anatomy/body-part images prioritize identifiable real photos and visual markers.',v57:'Vocabulary review images are hidden before answer reveal and become visible only after reveal; detail-modal images remain unchanged.',v59:'Server-first sync with version-checked JSON patches, blocked legacy writes, private server history, foreground refresh and recovery-only local drafts.',v58:'Align WORDFLOW_RULES with current handoff: post-reveal images, distinct-sense image counts, external URL and DB-only image workflow, and verified narrow DB writes. Runtime behavior unchanged.'});
 document.querySelectorAll('[data-app-version]').forEach(el=>el.textContent=APP_VERSION);document.getElementById('buildDateLabel').textContent=APP_BUILD_DATE;
 const LEARNING_CATEGORIES=Object.freeze([{id:'action',name:'동작',icon:'🏃',desc:'몸짓 · 자세 · 움직임'},{id:'body',name:'신체',icon:'🧍',desc:'얼굴 · 손 · 다리 · 세부 부위'},{id:'taste',name:'맛',icon:'🍋',desc:'맛 · 향 · 음식의 느낌'},{id:'color',name:'색깔',icon:'🎨',desc:'색 이름 · 비슷한 색의 차이'}]);
 const localDateKey=value=>{const d=value?new Date(value):new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`},todayKey=()=>localDateKey();
@@ -785,20 +900,39 @@ function fitReviewToViewport(){
   const shell=document.getElementById('reviewShell');
   if(!shell)return;
   shell.classList.remove('fit-roomy','fit-spacious');
-  if(window.innerWidth<=900||window.innerHeight<=820)return;
+  shell.style.removeProperty('--review-fill-image-extra');
+  if(window.innerWidth<=900)return;
   const card=shell.querySelector('.flashcard');
   if(!card||card.clientHeight<1)return;
   const available=card.clientHeight;
-  const used=measureReviewContentHeight(card);
-  let target=used<=available*.74?'fit-spacious':used<=available*.90?'fit-roomy':'';
-  if(!target)return;
-  shell.classList.add(target);
-  let expanded=measureReviewContentHeight(card);
-  if(expanded>available*.97&&target==='fit-spacious'){
-    shell.classList.remove('fit-spacious');shell.classList.add('fit-roomy');
-    expanded=measureReviewContentHeight(card);
+  // v73: revealed reviews use natural top-aligned content, then spend spare
+  // height on larger legible type and images without hiding or clipping text.
+  const isRevealed=shell.classList.contains('answer-revealed');
+  if(window.innerHeight>820){
+   const used=measureReviewContentHeight(card);
+   const target=used<=available*(isRevealed?.82:.74)?'fit-spacious':used<=available*(isRevealed?.95:.90)?'fit-roomy':'';
+   if(target){
+    shell.classList.add(target);
+    let expanded=measureReviewContentHeight(card);
+    if(expanded>available*.97&&target==='fit-spacious'){
+      shell.classList.remove('fit-spacious');shell.classList.add('fit-roomy');
+      expanded=measureReviewContentHeight(card);
+    }
+    if(expanded>available*.99)shell.classList.remove('fit-roomy','fit-spacious');
+   }
   }
-  if(expanded>available*.99)shell.classList.remove('fit-roomy','fit-spacious');
+  if(!isRevealed)return;
+  const gallery=card.querySelector('.review-image-gallery');
+  if(!gallery||getComputedStyle(gallery).display==='none')return;
+  // Limit image growth to measured free vertical room; long cards still scroll.
+  const spare=available-measureReviewContentHeight(card);
+  if(spare<20)return;
+  const extra=Math.max(0,Math.min(spare-12,Math.min(140,available*.16)));
+  if(extra<10)return;
+  shell.style.setProperty('--review-fill-image-extra',extra.toFixed(1)+'px');
+  if(measureReviewContentHeight(card)>available*.995){
+    shell.style.setProperty('--review-fill-image-extra',Math.max(0,extra-(measureReviewContentHeight(card)-available+12)).toFixed(1)+'px');
+  }
 }
 function scheduleReviewFit(){
   if(reviewFitTimer)clearTimeout(reviewFitTimer);
@@ -1096,7 +1230,7 @@ renderAll();void migrateLegacyRecoveries();fsrsInitPromise=initFsrs();cloudInitP
 <div class="rules-content"><p id="wordflowRulesVersion" style="color:var(--muted)"></p>
 <h3>단어와 예문</h3><ul><li>추가를 요청한 단어·표현만 등록하고, 중복은 확인합니다.</li><li>발음기호, 한국어 뜻, 영어 예문 5개와 각각의 한국어 해석을 넣습니다.</li><li><strong>원어민이 실생활에서 흔히 쓰는 상황·말투·단어 조합을 최대한 살려 예문 5개를 만듭니다.</strong> 딱딱한 교과서식 문장이나 억지 상황은 피하고, 격식 있는 단어는 실제 쓰이는 격식에 맞춥니다.</li><li>메모에는 핵심 뉘앙스, 자주 쓰는 표현, 주의점과 비슷한 표현의 차이를 설명합니다. 앞으로 ‘핵심 뉘앙스:’ 문단은 제목과 내용 전체를 다른 메모보다 1pt 크게, 굵게 표시합니다. 기존 ‘핵심:’ 문단도 동일하게 적용하며 데이터 원문을 변경하지 않습니다.</li></ul>
 <h3>이미지</h3><ul><li><strong>앞으로 단어장 이미지는 기존 인터넷 사진·일러스트 검색을 기본으로 합니다.</strong> 추상적인 표현도 마찬가지입니다. AI 이미지 생성은 사용자가 별도로 명확히 요청했을 때에만 허용되며 GPT의 임의 생성 판단은 더 이상 허용하지 않습니다. 이미 만들어 둔 이미지를 추가해 달라는 요청에는 원본 파일을 그대로 재사용합니다.</li><li><strong>이미지는 기본적으로 한 번만 생성하고, 그 결과물 원본 그대로 저장·등록합니다.</strong> 업로드가 어렵다는 이유로 다른 이미지나 SVG를 몰래 새로 제작하지 않습니다. 저장할 수 없으면 한계를 알립니다. 별개의 뜻을 의도적으로 여러 장 설명할 때는 기존 이미지 개수 규칙을 따릅니다.</li><li><strong>생성 이미지 내부의 글씨는 가급적 넣지 않습니다.</strong> 글씨를 읽어야 이해되는 억지 문구·말풍선·설명은 피합니다. 다만 실제 장면에 자연스러운 표지판·문서가 있거나 짧은 글자가 학습에 도움이 될 때, 또는 사용자가 요청하면 사용할 수 있으며 무조건 금지는 아닙니다.</li><li>불필요한 생성을 남발하지 않습니다. 생성 이미지를 단어장에 넣을 때는 임시 링크가 아닌 장기 보관 가능한 유효한 이미지 URL을 확인한 뒤 저장합니다.</li><li>기본 1장, 뚜렷하게 다른 뜻을 함께 배우면 2장, 필요한 경우 최대 3장을 사용합니다.</li><li>이미지 아래에는 한국어 장면 설명을 표시하고, 복습 중에는 정답 공개 후 보여줍니다.</li></ul>
-<h3>복습과 데이터 보호</h3><ul><li>복구 사본은 브라우저 IndexedDB에 최대 20개를 보관하고 오래된 사본부터 자동으로 정리합니다. 이전 로컬 복구 사본은 새 저장소로 안전하게 복사·확인한 후에만 정리합니다.</li><li>로컬 캐시 저장 공간이 부족해도 서버 데이터를 정상적으로 불러올 수 있으며, 서버 단어장과 복습 기록은 삭제하지 않습니다.</li><li>단어 내용 수정 시 기존 복습 기록과 다음 복습 일정은 보존합니다.</li><li>로그인 후 서버의 최신 데이터를 불러오고 변경한 항목만 저장합니다. 오래된 기기 데이터의 전체 덮어쓰기를 막습니다.</li><li>복습 결과는 그때그때 저장하되, 일반 저장 알림은 띄우지 않습니다. 실패·충돌은 알립니다.</li><li>JSON 내보내기는 현재 불러온 단어·문장·복습 기록과 진도를 포함합니다. ‘없는 카드 추가’는 전체 복습 기록 복원 기능이 아닙니다.</li></ul>
+<h3>복습과 데이터 보호</h3><ul><li>PC 복습에서 정답을 공개한 뒤에는 단어 카드 내용을 위에서부터 배치하고 사진과 예문·해석·메모 글씨를 더 크게 보여줍니다. 남는 화면 높이는 사진 확대에 활용하되 원본 비율을 지키고, 긴 메모는 카드 내부에서 스크롤할 수 있도록 유지합니다. 모바일 및 정답 공개 전 동작은 유지합니다.</li><li>복구 사본은 브라우저 IndexedDB에 최대 20개를 보관하고 오래된 사본부터 자동으로 정리합니다. 이전 로컬 복구 사본은 새 저장소로 안전하게 복사·확인한 후에만 정리합니다.</li><li>로컬 캐시 저장 공간이 부족해도 서버 데이터를 정상적으로 불러올 수 있으며, 서버 단어장과 복습 기록은 삭제하지 않습니다.</li><li>단어 내용 수정 시 기존 복습 기록과 다음 복습 일정은 보존합니다.</li><li>로그인 후 서버의 최신 데이터를 불러오고 변경한 항목만 저장합니다. 오래된 기기 데이터의 전체 덮어쓰기를 막습니다.</li><li>복습 결과는 그때그때 저장하되, 일반 저장 알림은 띄우지 않습니다. 실패·충돌은 알립니다.</li><li>JSON 내보내기는 현재 불러온 단어·문장·복습 기록과 진도를 포함합니다. ‘없는 카드 추가’는 전체 복습 기록 복원 기능이 아닙니다.</li></ul>
 <h3>타임캡슐 백업 · 복구</h3><ul><li>데이터 화면에는 ‘Wordflow 전체 백업’ 버튼이 기본으로 보이고, 타임캡슐 파일 검사·기존 JSON·없는 카드 추가·Wordflow 규칙은 접힌 ‘고급 기능’ 메뉴에서 사용할 수 있습니다.</li><li>데이터 화면의 타임캡슐 백업은 서버의 최신 전체 학습 데이터와 배포된 HTML 원본, AI 인수인계서·규칙·패치노트·복구 설명서를 JSON 하나로 묶어 저장합니다.</li><li>파일의 코드·데이터 SHA-256 무결성 검사를 제공하며, 검사 기능은 읽기 전용입니다.</li><li>원본 HTML 및 서버를 읽을 수 없거나 버전이 불일치하면 불완전한 백업을 만들지 않습니다.</li><li>기존 단순 JSON 백업은 유지하지만, 기존의 ‘없는 카드 추가’는 전체 FSRS 이력 복원이 아닙니다. 새 서버로의 전체 복원은 별도 안전한 절차가 필요합니다.</li><li>사진 원본이나 비밀 인증 정보는 포함하지 않으며, 외부 이미지·라이브러리는 미래에 사용할 수 없을 수 있습니다.</li></ul><h3>유지보수</h3><p>내용 변경 후에는 실제 저장 결과를 확인합니다. 앱 기능 변경 시 버전과 패치노트를 함께 갱신합니다. 규칙을 수정할 때 이 요약도 함께 맞춥니다.</p>
 <details><summary>전체 인수인계 원문 보기</summary><pre id="wordflowHandoffText"></pre></details>
 <details><summary>WORDFLOW_RULES 전체 보기</summary><pre id="wordflowRulesJson"></pre></details>
