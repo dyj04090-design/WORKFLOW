@@ -998,12 +998,16 @@ let reviewFitTimer=null;
 function measureReviewContentHeight(card){
   if(!card)return Infinity;
   const cs=getComputedStyle(card),pt=parseFloat(cs.paddingTop)||0,pb=parseFloat(cs.paddingBottom)||0;
-  let total=pt+pb;
-  for(const el of card.children){
-    const es=getComputedStyle(el);if(es.display==='none')continue;
-    total+=(el.getBoundingClientRect().height||0)+(parseFloat(es.marginTop)||0)+(parseFloat(es.marginBottom)||0);
+  // v74: display:contents wrappers preserve mobile/pre-reveal flow, but
+  // have no bounding rectangle. Measure their visible children recursively
+  // so the old responsive fit doesn't falsely treat the card as empty.
+  function visibleHeight(el){
+    const es=getComputedStyle(el);
+    if(es.display==='none')return 0;
+    if(es.display==='contents')return Array.from(el.children).reduce((total,child)=>total+visibleHeight(child),0);
+    return (el.getBoundingClientRect().height||0)+(parseFloat(es.marginTop)||0)+(parseFloat(es.marginBottom)||0);
   }
-  return total;
+  return pt+pb+Array.from(card.children).reduce((total,el)=>total+visibleHeight(el),0);
 }
 function fitReviewToViewport(){
   const shell=document.getElementById('reviewShell');
