@@ -24,8 +24,13 @@
 - Preserve all existing card fields, IDs, scheduling, `fsrs`, `due`, `reps`, `interval`, `lapses`, and review history.
 - For new vocabulary use natural American conversational English, a short Korean meaning, IPA in `pronunciation`, Hangul approximation in `pronunciationRespelling`, five realistic examples in `context` with aligned Korean translations in `contextKo`, and detailed teacher notes in `note`.
 - Use a dedicated `핵심 뉘앙스:` paragraph where useful; cover common patterns, register, confusing alternatives, and pitfalls.
+- For **sentence tab** notes, NEVER add `[학습 주제]` / `[학습주제]`, generic topic summaries, or metadata about preserving the source. Start notes with useful expressions, nuances, examples or comparisons only. User explicitly requested this rule on 2026-11-19. Do not confuse sentence notes with vocabulary notes.
 - Images: use a relevant, stable **existing** public photo/illustration by default; generate only when explicitly requested. Usually one image, or two for distinctly separate senses. Preserve `images[]` and primary `imageUrl` compatibility, with meaningful Korean `sense` captions. Never put temporary image URLs into the database.
 - After changes: query the changed rows again, confirm requested values and non-target field preservation, and check scheduling/review data before reporting completion.
+
+## Sentence study interface
+- The sentence list has `[학습하기]`, a read-only study screen that shows Korean text, English answers, and notes together without changing FSRS reviews.
+- Its screen header should contain only `문장 학습` and `목록으로`; do not add unnecessary subtitles or review-meta/status banners. On desktop, preserve the two-column layout and separate scrolling. Regular sentence reviews must hide answers and notes until reveal.
 
 ## Code editing and deployment
 1. Read the above embedded specification first. Preserve its content and all prior data invariants.
